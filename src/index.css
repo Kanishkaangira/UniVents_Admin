@@ -19,4 +19,32 @@
 
 body {
   @apply bg-bg text-ink font-sans;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #F4F5FC;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  color: #1B1F3B;
+  background: rgba(139, 124, 248, 0.25);
+}
+
+:focus-visible {
+  outline: 3px solid rgba(79, 70, 229, 0.35);
+  outline-offset: 2px;
 }

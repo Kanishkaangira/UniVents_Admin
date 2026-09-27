@@ -21,11 +21,13 @@
 9. Run `supabase/creator_scope_approval.sql` to restore `creator_scope`, derive
    it from the signed-in creator's admin row, and queue cross-scope posts for
    super-admin approval.
-10. Run `supabase/admin_event_registration_counts.sql` to show registration
+10. Run `supabase/admin_scoped_approval_routing.sql` to route cross-scope
+    submissions to their target department or club admins for approval.
+11. Run `supabase/admin_event_registration_counts.sql` to show registration
     totals on event cards without exposing attendee details.
-11. Run `supabase/event_status_by_date.sql` to set event status from its date
+12. Run `supabase/event_status_by_date.sql` to set event status from its date
     and schedule the daily refresh (requires `pg_cron` for automatic midnight updates).
-12. `npm run dev`
+13. `npm run dev`
 
 The admin page can promote an existing Auth user by UUID; it does not create
 Auth users or store passwords.

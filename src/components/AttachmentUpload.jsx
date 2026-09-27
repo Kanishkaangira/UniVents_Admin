@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { uploadAttachment } from '../lib/data';
+import { getPublicStorageUrl, uploadAttachment } from '../lib/data';
 
 // bucket: 'event-posters'; folder: 'Events Folder' | 'Notice Folder'
 // accept: 'image/*' | 'application/pdf,image/*'
 export default function AttachmentUpload({ bucket, folder, accept, label, helperText, value, onChange, onBusyChange }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const valueUrl = getPublicStorageUrl(value?.url);
 
   const handleFile = async e => {
     const file = e.target.files?.[0];
@@ -31,7 +32,7 @@ export default function AttachmentUpload({ bucket, folder, accept, label, helper
       {helperText && <p className="mb-2 text-xs leading-5 text-mute">{helperText}</p>}
       {value?.url ? (
         <div className="flex items-center justify-between rounded-xl border border-line bg-soft/40 px-3 py-2">
-          <a href={value.url} target="_blank" rel="noreferrer" className="truncate text-sm font-semibold text-primary">
+          <a href={valueUrl} target="_blank" rel="noopener noreferrer" className="truncate text-sm font-semibold text-primary">
             {value.name || 'View file'}
           </a>
           <button type="button" onClick={() => onChange(null)} className="text-sm font-semibold text-danger">

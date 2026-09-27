@@ -95,13 +95,32 @@ export const fetchPostsCreatedBy = userId => {
 };
 
 export const fetchPendingPosts = () =>
-  supabase
-    .from('events')
-    .select('*, departments:department_id(name, code), clubs:club_id(name)')
-    .eq('approval', 'pending')
-    .order('created_at', { ascending: true })
+  supabase.rpc('get_pending_admin_posts')
     .then(check)
     .then(addRegistrationCounts);
+
+// Lightweight inbox count for the navigation badge. The RPC already routes
+// each pending post to the signed-in admin's assigned scope.
+export const fetchPendingApprovalCount = () =>
+  supabase.rpc('get_pending_admin_posts').then(check).then(rows => (rows || []).length);
+
+// Attendee details are returned only by a database RPC that checks the
+// requesting admin's event scope. Do not query event_registrations directly.
+export const fetchEventRegistrations = eventId =>
+  supabase.rpc('get_event_registrants', { p_event_id: eventId }).then(check);
+
+// Older/demo rows may contain a storage object path instead of a full public
+// URL. Resolve those paths against the shared event-posters bucket.
+export const getPublicStorageUrl = value => {
+  if (!value) return '';
+  if (/^(https?:|blob:|data:)/i.test(value)) return value;
+
+  const objectPath = value
+    .replace(/^\/+/, '')
+    .replace(/^storage\/v1\/object\/public\/event-posters\//, '')
+    .replace(/^event-posters\//, '');
+  return supabase.storage.from('event-posters').getPublicUrl(objectPath).data.publicUrl;
+};
 
 export const createPost = fields =>
   supabase.from('events').insert(fields).select().single().then(check);
@@ -113,7 +132,10 @@ export const deletePost = id =>
   supabase.from('events').delete().eq('id', id).then(check);
 
 export const setApproval = (id, approval) =>
-  supabase.from('events').update({ approval }).eq('id', id).select().single().then(check);
+  supabase.rpc('review_event_approval', {
+    p_event_id: id,
+    p_decision: approval,
+  }).then(check);
 
 // ---- attachments (poster image or notice PDF) ----
 // bucket: 'event-posters' | 'notice-attachments'

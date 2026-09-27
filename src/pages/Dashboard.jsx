@@ -58,17 +58,19 @@ export default function Dashboard({ mineOnly = true }) {
   const shown = posts?.filter(p => filter === 'all' || p.content_type === filter);
 
   return (
-    <div className="flex">
+    <div className="flex min-h-screen flex-col md:flex-row">
       <Sidebar />
-      <main className="flex-1 p-8">
-        <div className="mb-6 flex items-center justify-between">
+      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 md:px-8 md:py-9">
+        <div className="mx-auto max-w-6xl">
+        <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-extrabold text-ink">{mineOnly ? 'My posts' : 'Posts in my scope'}</h1>
-            <p className="text-sm text-mute">{mineOnly ? 'Events and notices created by your admin account' : 'Events and notices available within your admin scope'}</p>
+            <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary">Content workspace</p>
+            <h1 className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">{mineOnly ? 'My posts' : 'All Posts'}</h1>
+            <p className="mt-1 text-sm text-mute">{mineOnly ? 'Manage events and notices created by your admin account.' : 'Review events and notices available within your admin scope.'}</p>
           </div>
           <Link
             to="/new"
-            className="rounded-xl bg-gradient-to-r from-primary to-primary2 px-4 py-2.5 text-sm font-bold text-white"
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-card transition hover:bg-primary/90"
           >
             + New post
           </Link>
@@ -80,7 +82,7 @@ export default function Dashboard({ mineOnly = true }) {
           </div>
         )}
 
-        <div className="mb-5 inline-flex rounded-xl bg-white p-1 shadow-card">
+        <div className="mb-5 inline-flex rounded-xl border border-line bg-white p-1 shadow-sm">
           {['all', 'event', 'notice'].map(f => (
             <button
               key={f}
@@ -100,27 +102,24 @@ export default function Dashboard({ mineOnly = true }) {
         {error && <p className="mb-4 font-semibold text-danger">{error}</p>}
 
         {isLoading ? (
-          <p className="text-mute">Loading…</p>
+          <div className="rounded-2xl border border-line bg-white p-8 text-center text-sm font-medium text-mute">Loading posts…</div>
         ) : shown.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-line bg-white p-10 text-center">
+          <div className="rounded-2xl border border-dashed border-line bg-white px-6 py-14 text-center shadow-sm">
             <p className="font-semibold text-ink">{mineOnly ? 'You have not created any posts yet' : 'No posts in this scope'}</p>
             <p className="mt-1 text-sm text-mute">{mineOnly ? 'Create a new event or notice to see it here.' : 'Posts visible to your admin scope will appear here.'}</p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
             {shown.map(post => {
-              const canManage = isSuper
-                || post.created_by === admin?.id
-                || (admin?.scope_type === 'department'
-                  && post.organizer_scope === 'department'
-                  && post.department_id === admin.department_id)
-                || (admin?.scope_type === 'club'
-                  && post.organizer_scope === 'club'
-                  && post.club_id === admin.club_id);
-              return <PostCard key={post.id} post={post} onDelete={handleDelete} canManage={canManage} />;
+              const canManage = isSuper || post.created_by === admin?.id;
+              // Registration information belongs to the admin who created
+              // the event, even when another admin can view the scoped post.
+              const canViewRegistrations = post.created_by === admin?.id;
+              return <PostCard key={post.id} post={post} onDelete={handleDelete} canManage={canManage} canViewRegistrations={canViewRegistrations} />;
             })}
           </div>
         )}
+        </div>
       </main>
     </div>
   );

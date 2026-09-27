@@ -161,8 +161,15 @@ export default function PostForm() {
       const savedPost = id
         ? await updatePost(id, payload)
         : await createPost({ ...payload, created_by: admin.id });
+      const approvalDestination = organizerScope === 'department'
+        ? selectedDepartment?.name || 'the selected department'
+        : organizerScope === 'club'
+          ? selectedClub?.name || 'the selected club'
+          : 'super admins';
       const postNotice = savedPost.approval === 'pending'
-        ? 'Post submitted and awaiting super admin approval.'
+        ? organizerScope === 'university'
+          ? 'Post saved. It is now in the super admin Pending approvals inbox.'
+          : `Post saved. It is now in the ${approvalDestination} admin Pending approvals inbox.`
         : savedPost.approval === 'rejected'
           ? 'Post was saved with rejected approval status.'
           : 'Post saved and approved.';
@@ -183,25 +190,27 @@ export default function PostForm() {
 
   if (loading) {
     return (
-      <div className="flex">
+      <div className="flex min-h-screen flex-col md:flex-row">
         <Sidebar />
-        <main className="flex-1 p-8 text-mute">Loading…</main>
+        <main className="min-w-0 flex-1 px-4 py-6 text-mute sm:px-6 md:px-8 md:py-9">Loading…</main>
       </div>
     );
   }
 
   return (
-    <div className="flex">
+    <div className="flex min-h-screen flex-col md:flex-row">
       <Sidebar />
-      <main className="flex-1 p-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-extrabold text-ink">{id ? 'Edit post' : 'New post'}</h1>
-          <p className="text-sm text-mute">Posts within your admin scope are approved automatically. Posts for another organization are sent to a super admin for approval.</p>
+      <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 md:px-8 md:py-9">
+        <div className="mx-auto max-w-5xl">
+        <div className="mb-7">
+          <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary">Content workspace</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">{id ? 'Edit post' : 'New post'}</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-mute">Posts in your own scope are approved automatically. For another audience, choose its post level and target organization; that organization’s admins will see the request in Pending approvals.</p>
         </div>
 
-        <form onSubmit={submit} className="max-w-2xl rounded-2xl border border-line bg-white p-6 shadow-card">
-          {error && <p className="mb-4 font-semibold text-danger">{error}</p>}
-          {lookupError && <p role="alert" className="mb-4 font-semibold text-danger">{lookupError}</p>}
+        <form onSubmit={submit} className="max-w-3xl rounded-2xl border border-line bg-white p-4 shadow-sm sm:p-6 lg:p-7">
+          {error && <p role="alert" className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-danger">{error}</p>}
+          {lookupError && <p role="alert" className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-danger">{lookupError}</p>}
 
           <div className="mb-5 inline-flex rounded-xl bg-bg p-1">
             {['event', 'notice'].map(t => (
@@ -220,7 +229,7 @@ export default function PostForm() {
 
           <Field label="Title *" value={form.title} onChange={v => update('title', v)} />
           <TextArea label="Description *" value={form.description} onChange={v => update('description', v)} />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
             <Field label="Category" value={form.category} onChange={v => update('category', v)} placeholder={isEvent ? 'Workshop, Fest…' : 'Exams, Deadline…'} />
             <Field
               label="Organizer name"
@@ -271,12 +280,12 @@ export default function PostForm() {
             </select>
             {organizerScope === 'department' && (
               <select
-                aria-label="Department this post is for"
+                aria-label="Target department for this post"
                 value={departmentId}
                 onChange={e => setDepartmentId(e.target.value)}
                 className="mt-2 w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink"
               >
-                <option value="">Select department</option>
+                <option value="">Select target department</option>
                 {departments.map(department => (
                   <option key={department.id} value={department.id}>
                     {department.code ? `${department.code} · ` : ''}{department.name}
@@ -286,21 +295,21 @@ export default function PostForm() {
             )}
             {organizerScope === 'club' && (
               <select
-                aria-label="Club this post is for"
+                aria-label="Target club for this post"
                 value={clubId}
                 onChange={e => setClubId(e.target.value)}
                 className="mt-2 w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink"
               >
-                <option value="">Select club</option>
+                <option value="">Select target club</option>
                 {clubs.map(club => <option key={club.id} value={club.id}>{club.name}</option>)}
               </select>
             )}
-            <p className="mt-1 text-xs text-mute">Choose where this post should appear. Requests outside your assigned scope go to a super admin for approval. Visibility controls who can see it after approval.</p>
+            <p className="mt-1 text-xs leading-5 text-mute">University posts go to super admins. Choose Department or Club to select the destination admin team. The post is saved as pending and is shown to that team in Pending approvals; users see it after approval.</p>
           </div>
 
           {isEvent ? (
             <>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2 lg:grid-cols-3">
                 <Field type="date" label="Date *" value={form.event_date} onChange={v => update('event_date', v)} />
                 <Field type="time" label="Start time *" value={form.start_time} onChange={v => update('start_time', v)} />
                   <Field type="time" label="End time (optional)" value={form.end_time} onChange={v => update('end_time', v)} />
@@ -325,7 +334,7 @@ export default function PostForm() {
               </label>
 
               {form.registration_required && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
                   <Field type="datetime-local" label="Registration deadline (optional)" value={form.registration_deadline} onChange={v => update('registration_deadline', v)} />
                   <Field type="number" label="Capacity limit (optional)" value={form.capacity} onChange={v => update('capacity', v)} placeholder="Leave blank for no limit" />
                 </div>
@@ -354,7 +363,7 @@ export default function PostForm() {
             />
           )}
 
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:items-center">
             <button
               type="submit"
               disabled={saving || uploading}
@@ -371,6 +380,7 @@ export default function PostForm() {
             </button>
           </div>
         </form>
+        </div>
       </main>
     </div>
   );
@@ -385,7 +395,8 @@ function Field({ label, value, onChange, type = 'text', placeholder }) {
         value={value}
         placeholder={placeholder}
         onChange={e => onChange(e.target.value)}
-        className="w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink outline-none focus:border-primary"
+        required={label.includes('*')}
+        className="min-h-11 w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
       />
     </div>
   );
@@ -415,7 +426,7 @@ function TextArea({ label, value, onChange }) {
         rows={3}
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink outline-none focus:border-primary"
+        className="w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
       />
     </div>
   );
