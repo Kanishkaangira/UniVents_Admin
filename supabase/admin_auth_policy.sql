@@ -4,7 +4,7 @@
 alter table public.admins enable row level security;
 
 revoke select on table public.admins from anon, authenticated, public;
-grant select (id, email, scope_type, department_id, club_id)
+grant select (id, email, scope_type, department_id, skill_faculty_id, club_id)
   on table public.admins to authenticated;
 
 drop policy if exists "admins can read own row" on public.admins;
@@ -25,6 +25,7 @@ returns table (
   email text,
   scope_type text,
   department_id uuid,
+  skill_faculty_id uuid,
   club_id uuid
 )
 language sql
@@ -37,6 +38,7 @@ as $$
     admin_row.email,
     admin_row.scope_type::text,
     admin_row.department_id,
+    admin_row.skill_faculty_id,
     admin_row.club_id
   from public.admins as admin_row
   where admin_row.id = (select auth.uid())

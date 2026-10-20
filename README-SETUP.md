@@ -6,38 +6,66 @@
    overwrite them with the ones in this zip)
 3. Copy `.env.example` to `.env` and fill in your Supabase URL + anon key
    (same values as the mobile app's `src/Constants/env.js`)
-4. Run `supabase/admin_auth_policy.sql` in the Supabase SQL Editor. Each row in
+4. Ensure `supabase/skill_faculty_department.sql` has been run. Then run
+   `supabase/skill_faculty_scope_enum_values.sql` by itself in the Supabase SQL
+   Editor and let it finish/commit before continuing.
+5. Run `supabase/admin_skill_faculty_scope.sql`. It migrates existing faculty
+   admin assignments, makes `admins.department_id` reference `department`,
+   adds `admins.skill_faculty_id`, and installs Skill Faculty and Department
+   post targeting and approval routing.
+6. Run `supabase/admin_auth_policy.sql` in the Supabase SQL Editor. Each row in
    `public.admins` must use the corresponding Supabase Auth user's UUID as `id`.
    Admin passwords are managed by Supabase Auth, not stored in `public.admins`.
-5. Run `supabase/admin_management_policy.sql` after `admin_auth_policy.sql`.
+7. Run `supabase/admin_management_policy.sql` after `admin_auth_policy.sql`.
    It grants admin/organization writes only to authenticated super admins.
-6. Run `supabase/admin_events_created_by_auth_fk.sql` so `events.created_by`
+8. Run `supabase/admin_events_created_by_auth_fk.sql` so `events.created_by`
    references `auth.users` and accepts admins without a `profiles` row.
-7. Run `supabase/admin_event_insert_policy.sql` to let admins create event and
+9. Run `supabase/admin_event_insert_policy.sql` to let admins create event and
    notice rows with `created_by` set to their own Auth UUID.
-8. Run `supabase/admin_storage_policy.sql`. It creates/configures the public
+10. Run `supabase/admin_storage_policy.sql`. It creates/configures the public
    `event-posters` bucket and lets admins upload to `Events Folder/` and
    `Notice Folder/`.
-9. Run `supabase/creator_scope_approval.sql` to restore `creator_scope`, derive
-   it from the signed-in creator's admin row, and queue cross-scope posts for
-   super-admin approval.
-10. Run `supabase/admin_scoped_approval_routing.sql` to route cross-scope
-    submissions to their target department or club admins for approval.
-11. Run `supabase/admin_event_registration_counts.sql` to show registration
+11. Run `supabase/creator_scope_approval.sql` to restore `creator_scope`, derive
+   it from the signed-in creator's admin row.
+12. Run `supabase/admin_scoped_approval_routing.sql`, then rerun
+    `supabase/admin_skill_faculty_scope.sql` to install the final target-admin
+    approval routing and admin scope access rules. Cross-scope posts wait for
+    approval from the target organization.
+13. Run `supabase/admin_approval_review_fix.sql` to install the static approval
+    update function and let creators resubmit rejected posts by editing them.
+14. Run `supabase/admin_posts_visible_to_all_admins.sql` so every admin can
+    view all posts while non-admin app users see approved posts only.
+15. Run `supabase/admin_post_creator_mutation_policy.sql` so only the creator
+    or a Super admin can edit or delete posts.
+16. Run `supabase/admin_event_registration_counts.sql` to show registration
     totals on event cards without exposing attendee details.
-12. Run `supabase/event_status_by_date.sql` to set event status from its date
+17. Run `supabase/event_status_by_date.sql` to set event status from its date
     and schedule the daily refresh (requires `pg_cron` for automatic midnight updates).
-13. `npm run dev`
+18. `npm run dev`
 
 The admin page can promote an existing Auth user by UUID; it does not create
 Auth users or store passwords.
 
+## Admin scope access
+- All registered admins can view posts across all scopes. Only the post creator
+  and Super admins can edit or delete them.
+- Super admins can review any pending post. Skill Faculty, Department, and Club
+  admins receive pending posts addressed to their assigned target scope.
+- Every admin can submit a post to any publish level. Posts within the creator's
+  scope are approved automatically; cross-scope posts wait for approval from
+  the target organization's admin. The creator sees the pending or rejected
+  state in My posts. App users see a post only after it is approved.
+- Supabase RLS and approval functions enforce these boundaries.
+
 ## Assumptions this code makes about your schema
-- `public.admins` has `id`, `email`, `scope_type`, `department_id`, and `club_id`;
+- `public.admins` has `id`, `email`, `scope_type`, `department_id`,
+  `skill_faculty_id`, and `club_id`;
+- `admins.department_id` references `public.department`; `admins.skill_faculty_id`
+  references `public.skill_faculty`;
    `id` is the matching `auth.users.id` UUID. Login credentials are checked by
    Supabase Auth, then `current_admin()` returns only the signed-in user's row.
 - `events` has: content_type, title, description, category, organizer_name,
-  department_id, club_id, event_date, start_time, end_time, venue,
+  department_id, skill_faculty_id, club_id, event_date, start_time, end_time, venue,
   registration_required, registration_deadline, capacity, image_url,
   visibility, status, attachment_url, attachment_type, attachment_name,
   organizer_scope, creator_scope, approval, created_by.

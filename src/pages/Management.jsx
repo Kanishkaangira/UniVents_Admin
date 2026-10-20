@@ -6,6 +6,7 @@ import {
   fetchAdmins,
   fetchClubs,
   fetchDepartments,
+  fetchSkillFaculties,
   saveClub,
   saveDepartment,
 } from '../lib/data';
@@ -14,27 +15,30 @@ export default function Management() {
   const [tab, setTab] = useState('admins');
   const [admins, setAdmins] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [skillFaculties, setSkillFaculties] = useState([]);
   const [clubs, setClubs] = useState([]);
-  const [departmentForm, setDepartmentForm] = useState({ name: '', code: '' });
+  const [departmentForm, setDepartmentForm] = useState({ name: '', code: '', skill_faculty_id: '' });
   const [clubForm, setClubForm] = useState({ name: '', code: '' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const [adminRows, departmentRows, clubRows] = await Promise.all([
-      fetchAdmins(), fetchDepartments(), fetchClubs(),
+    const [adminRows, departmentRows, facultyRows, clubRows] = await Promise.all([
+      fetchAdmins(), fetchDepartments(), fetchSkillFaculties(), fetchClubs(),
     ]);
     setAdmins(adminRows || []);
     setDepartments(departmentRows || []);
+    setSkillFaculties(facultyRows || []);
     setClubs(clubRows || []);
   };
 
   useEffect(() => {
-    Promise.all([fetchAdmins(), fetchDepartments(), fetchClubs()])
-      .then(([adminRows, departmentRows, clubRows]) => {
+    Promise.all([fetchAdmins(), fetchDepartments(), fetchSkillFaculties(), fetchClubs()])
+      .then(([adminRows, departmentRows, facultyRows, clubRows]) => {
         setAdmins(adminRows || []);
         setDepartments(departmentRows || []);
+        setSkillFaculties(facultyRows || []);
         setClubs(clubRows || []);
       })
       .catch(e => setError(e.message));
@@ -58,8 +62,8 @@ export default function Management() {
   const submitDepartment = e => {
     e.preventDefault();
     run(async () => {
-      await saveDepartment({ ...(departmentForm.id ? { id: departmentForm.id } : {}), name: departmentForm.name.trim(), code: departmentForm.code.trim() });
-      setDepartmentForm({ name: '', code: '' });
+      await saveDepartment({ ...(departmentForm.id ? { id: departmentForm.id } : {}), name: departmentForm.name.trim(), code: departmentForm.code.trim(), skill_faculty_id: departmentForm.skill_faculty_id });
+      setDepartmentForm({ name: '', code: '', skill_faculty_id: '' });
     }, 'Department saved to the database. The department list has been refreshed.');
   };
 
@@ -103,20 +107,28 @@ export default function Management() {
             title: row.email,
             subtitle: row.scope_type === 'department'
               ? `Department · ${departments.find(item => item.id === row.department_id)?.name || row.department_id}`
-              : row.scope_type === 'club'
+              : row.scope_type === 'skill_faculty'
+                ? `Skill Faculty · ${skillFaculties.find(item => item.id === row.skill_faculty_id)?.name || row.skill_faculty_id}`
+                : row.scope_type === 'club'
                 ? `Club · ${clubs.find(item => item.id === row.club_id)?.name || row.club_id}`
                 : 'Super admin · all scopes',
           }))} />
         </>}
 
         {tab === 'departments' && <>
-          <form onSubmit={submitDepartment} className="mb-6 grid gap-4 rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6 md:grid-cols-[1fr_1fr_auto] md:items-end">
-            <h2 className="md:col-span-3 text-lg font-bold text-ink">{departmentForm.id ? 'Edit department' : 'Add department'}</h2>
+          <form onSubmit={submitDepartment} className="mb-6 grid gap-4 rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
+            <h2 className="md:col-span-4 text-lg font-bold text-ink">{departmentForm.id ? 'Edit department' : 'Add department'}</h2>
+            <label className="text-sm font-semibold text-mute">Skill Faculty
+              <select required value={departmentForm.skill_faculty_id} onChange={e => setDepartmentForm({ ...departmentForm, skill_faculty_id: e.target.value })} className="mt-1.5 min-h-11 w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink">
+                <option value="">Select Skill Faculty</option>
+                {skillFaculties.map(faculty => <option key={faculty.id} value={faculty.id}>{faculty.name}</option>)}
+              </select>
+            </label>
             <Field label="Department name" required value={departmentForm.name} onChange={name => setDepartmentForm({ ...departmentForm, name })} />
             <Field label="Short code" required value={departmentForm.code} onChange={code => setDepartmentForm({ ...departmentForm, code })} />
             <button disabled={busy} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60">{departmentForm.id ? 'Save' : 'Add'}</button>
           </form>
-          <ListPanel title="Departments" empty="No departments found." rows={departments.map(row => ({ id: row.id, title: row.name, subtitle: row.code, onEdit: () => setDepartmentForm({ id: row.id, name: row.name, code: row.code || '' }), onDelete: () => remove(row.name, () => deleteDepartment(row.id)) }))} />
+          <ListPanel title="Departments" empty="No departments found." rows={departments.map(row => ({ id: row.id, title: row.name, subtitle: `${row.code || ''} · ${skillFaculties.find(faculty => faculty.id === row.skill_faculty_id)?.name || ''}`, onEdit: () => setDepartmentForm({ id: row.id, name: row.name, code: row.code || '', skill_faculty_id: row.skill_faculty_id || '' }), onDelete: () => remove(row.name, () => deleteDepartment(row.id)) }))} />
         </>}
 
         {tab === 'clubs' && <>

@@ -22,7 +22,10 @@ const addRegistrationCounts = async posts => {
 
 // ---- lookups ----
 export const fetchDepartments = () =>
-  supabase.from('departments').select('id, name, code').order('name').then(check);
+  supabase.from('department').select('id, name, code, skill_faculty_id').order('name').then(check);
+
+export const fetchSkillFaculties = () =>
+  supabase.from('skill_faculty').select('id, name, code').order('name').then(check);
 
 export const fetchClubs = () =>
   supabase.from('clubs').select('id, name, code').order('name').then(check);
@@ -46,13 +49,14 @@ export const fetchCurrentAdmin = async () => {
     email: row.email ?? row.admin_email,
     scope_type: row.scope_type ?? row.admin_scope ?? row.scope,
     department_id: row.department_id ?? null,
+    skill_faculty_id: row.skill_faculty_id ?? null,
     club_id: row.club_id ?? null,
   };
 };
 
 // ---- super-admin management ----
 export const fetchAdmins = () =>
-  supabase.from('admins').select('id, email, scope_type, department_id, club_id').order('email').then(check);
+  supabase.from('admins').select('id, email, scope_type, department_id, skill_faculty_id, club_id').order('email').then(check);
 
 export const saveAdmin = fields =>
   supabase.from('admins').upsert(fields, { onConflict: 'id' }).select().single().then(check);
@@ -61,10 +65,10 @@ export const deleteAdmin = id =>
   supabase.from('admins').delete().eq('id', id).then(check);
 
 export const saveDepartment = fields =>
-  supabase.from('departments').upsert(fields, { onConflict: 'id' }).select().single().then(check);
+  supabase.from('department').upsert(fields, { onConflict: 'id' }).select().single().then(check);
 
 export const deleteDepartment = id =>
-  supabase.from('departments').delete().eq('id', id).then(check);
+  supabase.from('department').delete().eq('id', id).then(check);
 
 export const saveClub = fields =>
   supabase.from('clubs').upsert(fields, { onConflict: 'id' }).select().single().then(check);
@@ -73,11 +77,44 @@ export const deleteClub = id =>
   supabase.from('clubs').delete().eq('id', id).then(check);
 
 // ---- events / notices ----
-// RLS limits this list to posts the signed-in admin can see within their scope.
-export const fetchPostsInScope = () =>
+// Used to load an existing post for editing; includes the creator's pending
+// and rejected posts so they remain manageable in My posts.
+export const fetchPostsInScope = (
+  adminId = null,
+  scopeType = null,
+  skillFacultyId = null,
+  departmentId = null,
+  clubId = null,
+) =>
   supabase
     .from('events')
-    .select('*, departments:department_id(name, code), clubs:club_id(name)')
+    .select('*, departments:department_id(name, code, skill_faculty_id), skill_faculty:skill_faculty_id(name, code), clubs:club_id(name)')
+    .order('created_at', { ascending: false })
+    .then(check)
+    .then(rows => (rows || []).filter(post => {
+      if (!adminId || scopeType === 'super' || post.created_by === adminId) return true;
+      if (scopeType === 'skill_faculty') {
+        return post.skill_faculty_id === skillFacultyId
+          && ['skill_faculty', 'department'].includes(post.organizer_scope);
+      }
+      if (scopeType === 'department') {
+        return post.organizer_scope === 'department'
+          && post.department_id === departmentId;
+      }
+      if (scopeType === 'club') {
+        return post.organizer_scope === 'club' && post.club_id === clubId;
+      }
+      return false;
+    }))
+    .then(addRegistrationCounts);
+
+// The shared All Posts page is for live content only. Pending and rejected
+// posts stay in the creator's My posts and the target admin's review inbox.
+export const fetchApprovedPosts = () =>
+  supabase
+    .from('events')
+    .select('*, departments:department_id(name, code, skill_faculty_id), skill_faculty:skill_faculty_id(name, code), clubs:club_id(name)')
+    .eq('approval', 'approved')
     .order('created_at', { ascending: false })
     .then(check)
     .then(addRegistrationCounts);
@@ -87,7 +124,7 @@ export const fetchPostsCreatedBy = userId => {
 
   return supabase
     .from('events')
-    .select('*, departments:department_id(name, code), clubs:club_id(name)')
+    .select('*, departments:department_id(name, code, skill_faculty_id), skill_faculty:skill_faculty_id(name, code), clubs:club_id(name)')
     .eq('created_by', userId)
     .order('created_at', { ascending: false })
     .then(check)
@@ -129,13 +166,40 @@ export const updatePost = (id, fields) =>
   supabase.from('events').update(fields).eq('id', id).select().single().then(check);
 
 export const deletePost = id =>
-  supabase.from('events').delete().eq('id', id).then(check);
+  supabase.from('events').delete().eq('id', id).select('id').then(check).then(rows => {
+    if (!rows?.length) {
+      throw new Error('Only the post creator or a Super admin can delete this post.');
+    }
+    return rows[0];
+  });
 
-export const setApproval = (id, approval) =>
-  supabase.rpc('review_event_approval', {
+export const setApproval = async (id, approval) => {
+  const data = check(await supabase.rpc('review_event_approval', {
     p_event_id: id,
     p_decision: approval,
-  }).then(check);
+  }));
+  return Array.isArray(data) ? data[0] : data;
+};
+
+export const sendApprovedEventPush = async eventId => {
+  const { data, error } = await supabase.functions.invoke('send-push', {
+    body: { event_id: eventId },
+  });
+  if (error) {
+    let message = error.message;
+    try {
+      const response = error.context;
+      if (response instanceof Response) {
+        const body = await response.clone().json();
+        message = body.error || message;
+      }
+    } catch {
+      // Keep the SDK message if the function did not return a JSON error body.
+    }
+    throw new Error(message);
+  }
+  return data;
+};
 
 // ---- attachments (poster image or notice PDF) ----
 // bucket: 'event-posters' | 'notice-attachments'

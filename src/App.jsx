@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import PostForm from './pages/PostForm';
 import PendingApprovals from './pages/PendingApprovals';
 import Management from './pages/Management';
+import PendingApprovalNotifier from './components/PendingApprovalNotifier';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
             <span className="absolute -right-[140px] bottom-[45px] h-[250px] w-[250px] rounded-full border border-white/70 bg-[#FFE9DD]" />
           </div>
           <div className="relative z-10">
+          <PendingApprovalNotifier />
           <Routes>
           <Route path="/login" element={<Login />} />
           <Route

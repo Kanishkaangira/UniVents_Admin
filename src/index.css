@@ -48,3 +48,121 @@ button:disabled {
   outline: 3px solid rgba(79, 70, 229, 0.35);
   outline-offset: 2px;
 }
+
+@keyframes feed-intro-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes feed-icon-arrive {
+  0% { opacity: 0; transform: scale(0.82) rotate(-8deg); }
+  70% { opacity: 1; transform: scale(1.06) rotate(2deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+@keyframes feed-card-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes empty-art-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-7px) rotate(2deg); }
+}
+
+@keyframes empty-orbit-drift {
+  0%, 100% { transform: rotate(-8deg) scale(1); }
+  50% { transform: rotate(8deg) scale(1.04); }
+}
+
+@keyframes empty-sparkle-pop {
+  0%, 100% { opacity: 0.55; transform: scale(0.88) rotate(-10deg); }
+  50% { opacity: 1; transform: scale(1.12) rotate(12deg); }
+}
+
+.feed-intro {
+  animation: feed-intro-in 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.feed-intro-icon {
+  animation: feed-icon-arrive 560ms cubic-bezier(0.2, 0.75, 0.25, 1) 100ms both;
+}
+
+.feed-card-enter {
+  animation: feed-card-in 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.empty-feed {
+  animation: feed-intro-in 500ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.empty-feed-art {
+  position: relative;
+  display: grid;
+  width: 132px;
+  height: 112px;
+  place-items: center;
+  animation: empty-art-float 4s ease-in-out infinite;
+}
+
+.empty-feed-orbit {
+  position: absolute;
+  border: 1px solid rgba(79, 70, 229, 0.12);
+  border-radius: 9999px;
+  background: rgba(238, 240, 255, 0.45);
+}
+
+.empty-feed-orbit-one {
+  width: 108px;
+  height: 108px;
+  animation: empty-orbit-drift 7s ease-in-out infinite;
+}
+
+.empty-feed-orbit-two {
+  width: 82px;
+  height: 82px;
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.6);
+  animation: empty-orbit-drift 9s ease-in-out infinite reverse;
+}
+
+.empty-feed-icon {
+  z-index: 1;
+  display: grid;
+  width: 66px;
+  height: 66px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 22px;
+  background: linear-gradient(145deg, #fff 10%, #eeedff 100%);
+  color: #4f46e5;
+  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.16);
+}
+
+.empty-feed-sparkle {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border: 1px solid white;
+  border-radius: 10px;
+  background: #fff;
+  color: #8b7cf8;
+  box-shadow: 0 5px 14px rgba(60, 50, 150, 0.12);
+  animation: empty-sparkle-pop 2.6s ease-in-out infinite;
+}
+
+.empty-feed-sparkle-one { top: 3px; right: 12px; }
+.empty-feed-sparkle-two { bottom: 9px; left: 8px; animation-delay: 700ms; }
+.empty-feed-sparkle-two span { width: 7px; height: 7px; border-radius: 9999px; background: #ff9b7d; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

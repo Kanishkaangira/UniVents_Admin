@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, CalendarDays, Clock3, FileText, MapPin, UsersRound } from 'lucide-react';
+import { Building2, CalendarDays, Clock3, Download, FileText, MapPin, UsersRound } from 'lucide-react';
 import { fetchEventRegistrations, getPublicStorageUrl } from '../lib/data';
 import ApprovalBadge from './ApprovalBadge';
 
 const scopeText = post => {
   if (post.organizer_scope === 'university') return 'University level';
-  if (post.organizer_scope === 'department') return `Department · ${post.departments?.name || 'Department'}`;
+  // A faculty-level post has no child department; show the assigned faculty's
+  // name directly in the scope row so SFIS, SFPVA, and DSW are easy to identify.
+  if (post.organizer_scope === 'skill_faculty') return post.skill_faculty?.name || post.organizer_name || 'Skill Faculty';
+  if (post.organizer_scope === 'department') return post.departments?.name || post.organizer_name || 'Department';
   if (post.organizer_scope === 'club') return `Club · ${post.clubs?.name || 'Club'}`;
   return post.organizer_scope;
 };
@@ -35,7 +38,7 @@ export default function PostCard({ post, onDelete, actions, canManage = true, ca
   const visibleRegistrations = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return registrations || [];
-    return (registrations || []).filter(row => [row.user_name, row.email, row.user_type, row.department_name, row.department_code, row.course, row.batch]
+    return (registrations || []).filter(row => [row.user_name, row.email, row.user_type, row.department_name, row.department_code, row.skill_faculty_name, row.skill_faculty_code, row.course, row.batch]
       .some(value => String(value || '').toLowerCase().includes(term)));
   }, [registrations, search]);
 
@@ -44,13 +47,18 @@ export default function PostCard({ post, onDelete, actions, canManage = true, ca
   const attachmentUrl = getPublicStorageUrl(!isEvent ? post.attachment_url : null);
   const hasAttachment = Boolean(attachmentUrl);
   const registrationCount = post.registration_count ?? 0;
-  const organizerLabel = post.organizer_name && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(post.organizer_name)
-    ? post.organizer_name
-    : scopeText(post);
+  // Show the actual publishing organization for faculty and department posts.
+  // The free-form organizer field can contain a short label that hides the
+  // faculty/department name admins expect users to see.
+  const organizerLabel = ['skill_faculty', 'department'].includes(post.organizer_scope)
+    ? scopeText(post)
+    : post.organizer_name && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(post.organizer_name)
+      ? post.organizer_name
+      : scopeText(post);
 
   return (
     <>
-    <article className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm transition hover:border-primary/20 hover:shadow-card">
+    <article className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm transition duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-card">
       <div className="flex flex-col sm:flex-row">
         <div className="relative h-48 w-full flex-none overflow-hidden bg-gradient-to-br from-primary/10 via-soft to-primary2/20 sm:h-auto sm:min-h-52 sm:w-52 md:w-60">
           {imageUrl ? (
@@ -120,7 +128,19 @@ export default function PostCard({ post, onDelete, actions, canManage = true, ca
               <h2 id={`attendees-title-${post.id}`} className="mt-1 truncate text-lg font-extrabold text-ink sm:text-xl">{post.title}</h2>
               <p className="mt-1 text-sm text-mute">{registrations?.length ?? post.registration_count ?? 0} registered attendee{(registrations?.length ?? post.registration_count ?? 0) === 1 ? '' : 's'}</p>
             </div>
-            <button type="button" aria-label="Close attendee list" onClick={() => setRegistrationsOpen(false)} className="rounded-xl px-3 py-2 text-sm font-semibold text-mute hover:bg-bg">Close</button>
+            <div className="flex flex-none items-center gap-2">
+              <button
+                type="button"
+                disabled={!registrations?.length}
+                onClick={() => downloadRegistrations(post, registrations || [])}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 text-sm font-bold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download size={16} />
+                <span className="hidden sm:inline">Download CSV</span>
+                <span className="sm:hidden">CSV</span>
+              </button>
+              <button type="button" aria-label="Close attendee list" onClick={() => setRegistrationsOpen(false)} className="rounded-xl px-3 py-2 text-sm font-semibold text-mute hover:bg-bg">Close</button>
+            </div>
           </header>
 
           <div className="border-b border-line px-5 py-3 sm:px-6">
@@ -145,15 +165,16 @@ export default function PostCard({ post, onDelete, actions, canManage = true, ca
               </div>
             ) : (
               <>
-                <div className="hidden overflow-hidden rounded-xl border border-line md:block">
-                  <table className="w-full border-collapse text-left text-sm">
+                <div className="hidden overflow-x-auto rounded-xl border border-line md:block">
+                  <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                     <thead className="bg-bg text-xs uppercase tracking-wide text-mute">
-                      <tr><th className="px-4 py-3 font-bold">Attendee</th><th className="px-4 py-3 font-bold">Department</th><th className="px-4 py-3 font-bold">Program</th><th className="px-4 py-3 font-bold">Registered</th></tr>
+                      <tr><th className="px-4 py-3 font-bold">Attendee</th><th className="px-4 py-3 font-bold">Department</th><th className="px-4 py-3 font-bold">Skill Faculty</th><th className="px-4 py-3 font-bold">Program</th><th className="px-4 py-3 font-bold">Registered</th></tr>
                     </thead>
                     <tbody className="divide-y divide-line">
                       {visibleRegistrations.map(row => <tr key={row.registration_id} className="align-top">
                         <td className="px-4 py-3"><p className="font-bold text-ink">{row.user_name}</p><p className="mt-0.5 text-xs text-mute">{row.email}</p><span className="mt-1 inline-block rounded-full bg-soft px-2 py-0.5 text-[11px] font-bold capitalize text-primary">{row.user_type}</span></td>
                         <td className="px-4 py-3 text-ink">{row.department_name || '—'}{row.department_code && <span className="block text-xs text-mute">{row.department_code}</span>}</td>
+                        <td className="px-4 py-3 text-ink">{row.skill_faculty_name || '—'}{row.skill_faculty_code && <span className="block text-xs text-mute">{row.skill_faculty_code}</span>}</td>
                         <td className="px-4 py-3 text-ink">{row.course || '—'}{row.batch && <span className="block text-xs text-mute">Batch {row.batch}{row.semester != null ? ` · Semester ${row.semester}` : ''}</span>}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-mute">{formatRegistrationDate(row.registered_at)}</td>
                       </tr>)}
@@ -164,6 +185,7 @@ export default function PostCard({ post, onDelete, actions, canManage = true, ca
                   {visibleRegistrations.map(row => <article key={row.registration_id} className="rounded-xl border border-line bg-white p-4">
                     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-ink">{row.user_name}</p><p className="mt-1 break-all text-xs text-mute">{row.email}</p></div><span className="flex-none rounded-full bg-soft px-2 py-1 text-[11px] font-bold capitalize text-primary">{row.user_type}</span></div>
                     <p className="mt-3 text-sm text-ink">{row.department_name || 'Department not set'}{row.department_code ? ` · ${row.department_code}` : ''}</p>
+                    <p className="mt-1 text-xs text-mute">{row.skill_faculty_name || 'Skill Faculty not set'}{row.skill_faculty_code ? ` · ${row.skill_faculty_code}` : ''}</p>
                     {(row.course || row.batch || row.semester != null) && <p className="mt-1 text-xs text-mute">{[row.course, row.batch && `Batch ${row.batch}`, row.semester != null && `Semester ${row.semester}`].filter(Boolean).join(' · ')}</p>}
                     <p className="mt-2 text-xs text-mute">Registered {formatRegistrationDate(row.registered_at)}</p>
                   </article>)}
@@ -176,6 +198,40 @@ export default function PostCard({ post, onDelete, actions, canManage = true, ca
     )}
     </>
   );
+}
+
+function downloadRegistrations(post, rows) {
+  const columns = [
+    ['Name', 'user_name'],
+    ['Email', 'email'],
+    ['User type', 'user_type'],
+    ['Department ID', 'department_id'],
+    ['Department', 'department_name'],
+    ['Department code', 'department_code'],
+    ['Skill Faculty ID', 'skill_faculty_id'],
+    ['Skill Faculty', 'skill_faculty_name'],
+    ['Skill Faculty code', 'skill_faculty_code'],
+    ['Course', 'course'],
+    ['Batch', 'batch'],
+    ['Semester', 'semester'],
+    ['Registered at', 'registered_at'],
+  ];
+  const csvCell = value => {
+    let text = value == null ? '' : String(value);
+    if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+  const csv = [columns.map(([label]) => csvCell(label)).join(','), ...rows.map(row => columns.map(([, key]) => csvCell(row[key])).join(','))].join('\r\n');
+  const blob = new Blob([`\uFEFF${csv}`], {type: 'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const safeTitle = String(post.title || 'event-registrations').normalize('NFKD').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70);
+  link.href = url;
+  link.download = `${safeTitle || 'event-registrations'}-registrations.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function formatRegistrationDate(value) {

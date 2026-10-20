@@ -164,40 +164,37 @@ declare
   result_row public.events%rowtype;
   affected_count bigint;
 begin
-  if p_decision not in ('approved', 'rejected') then
+  if p_decision is null or p_decision not in ('approved', 'rejected') then
     raise exception 'Decision must be approved or rejected.' using errcode = '22023';
   end if;
 
-  execute pg_catalog.format(
-    'update public.events
-       set approval = %L
-     where id = $1
-       and approval::text = ''pending''
-       and (
-         exists (
-           select 1 from public.admins as admin_row
-           where admin_row.id = (select auth.uid())
-             and admin_row.scope_type::text = ''super''
-             and organizer_scope::text = ''university''
-         )
-         or exists (
-           select 1 from public.admins as admin_row
-           where admin_row.id = (select auth.uid())
-             and admin_row.scope_type::text = ''department''
-             and organizer_scope::text = ''department''
-             and department_id = admin_row.department_id
-         )
-         or exists (
-           select 1 from public.admins as admin_row
-           where admin_row.id = (select auth.uid())
-             and admin_row.scope_type::text = ''club''
-             and organizer_scope::text = ''club''
-             and club_id = admin_row.club_id
-         )
-       )
-     returning *',
-    p_decision
-  ) into result_row using p_event_id;
+  update public.events as event_row
+  set approval = p_decision::public.approval_status_enum
+  where event_row.id = p_event_id
+    and event_row.approval::text = 'pending'
+    and (
+      exists (
+        select 1 from public.admins as admin_row
+        where admin_row.id = (select auth.uid())
+          and admin_row.scope_type::text = 'super'
+          and event_row.organizer_scope::text = 'university'
+      )
+      or exists (
+        select 1 from public.admins as admin_row
+        where admin_row.id = (select auth.uid())
+          and admin_row.scope_type::text = 'department'
+          and event_row.organizer_scope::text = 'department'
+          and event_row.department_id = admin_row.department_id
+      )
+      or exists (
+        select 1 from public.admins as admin_row
+        where admin_row.id = (select auth.uid())
+          and admin_row.scope_type::text = 'club'
+          and event_row.organizer_scope::text = 'club'
+          and event_row.club_id = admin_row.club_id
+      )
+    )
+  returning event_row.* into result_row;
 
   -- EXECUTE does not update PL/pgSQL's FOUND variable. Read ROW_COUNT so a
   -- successful UPDATE isn't rolled back as if the reviewer lacked access.

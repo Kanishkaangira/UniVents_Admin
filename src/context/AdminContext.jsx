@@ -93,7 +93,7 @@ export function AdminProvider({ children }) {
   const value = useMemo(
     () => ({
       session,
-      admin, // null while loading, or { id, email, scope_type, department_id, club_id }
+      admin, // null while loading, or { id, email, scope_type, department_id, skill_faculty_id, club_id }
       booting,
       error,
       isSuper: admin?.scope_type === 'super',

@@ -20,17 +20,24 @@ revoke all on function public.current_admin_is_super() from public, anon;
 grant execute on function public.current_admin_is_super() to authenticated;
 
 alter table public.admins enable row level security;
-alter table public.departments enable row level security;
+alter table public.skill_faculty enable row level security;
+alter table public.department enable row level security;
 alter table public.clubs enable row level security;
 
 grant select, insert, update, delete on public.admins to authenticated;
-grant select on public.departments to authenticated;
+grant select on public.skill_faculty to authenticated;
+grant select on public.department to authenticated;
 grant select on public.clubs to authenticated;
-grant insert, update, delete on public.departments to authenticated;
+grant insert, update, delete on public.department to authenticated;
 grant insert, update, delete on public.clubs to authenticated;
 
-drop policy if exists departments_authenticated_read on public.departments;
-create policy departments_authenticated_read on public.departments
+drop policy if exists skill_faculty_authenticated_read on public.skill_faculty;
+create policy skill_faculty_authenticated_read on public.skill_faculty
+  for select to authenticated
+  using ((select auth.uid()) is not null);
+
+drop policy if exists department_authenticated_read on public.department;
+create policy department_authenticated_read on public.department
   for select to authenticated
   using ((select auth.uid()) is not null);
 drop policy if exists clubs_authenticated_read on public.clubs;
@@ -77,30 +84,30 @@ create policy admins_super_delete_guard on public.admins
 
 -- Departments and clubs remain readable according to existing policies; only
 -- a super admin can mutate their rows.
-drop policy if exists departments_super_insert on public.departments;
-create policy departments_super_insert on public.departments
+drop policy if exists department_super_insert on public.department;
+create policy department_super_insert on public.department
   for insert to authenticated
   with check ((select public.current_admin_is_super()));
-drop policy if exists departments_super_insert_guard on public.departments;
-create policy departments_super_insert_guard on public.departments
+drop policy if exists department_super_insert_guard on public.department;
+create policy department_super_insert_guard on public.department
   as restrictive for insert to authenticated
   with check ((select public.current_admin_is_super()));
-drop policy if exists departments_super_update on public.departments;
-create policy departments_super_update on public.departments
+drop policy if exists department_super_update on public.department;
+create policy department_super_update on public.department
   for update to authenticated
   using ((select public.current_admin_is_super()))
   with check ((select public.current_admin_is_super()));
-drop policy if exists departments_super_update_guard on public.departments;
-create policy departments_super_update_guard on public.departments
+drop policy if exists department_super_update_guard on public.department;
+create policy department_super_update_guard on public.department
   as restrictive for update to authenticated
   using ((select public.current_admin_is_super()))
   with check ((select public.current_admin_is_super()));
-drop policy if exists departments_super_delete on public.departments;
-create policy departments_super_delete on public.departments
+drop policy if exists department_super_delete on public.department;
+create policy department_super_delete on public.department
   for delete to authenticated
   using ((select public.current_admin_is_super()));
-drop policy if exists departments_super_delete_guard on public.departments;
-create policy departments_super_delete_guard on public.departments
+drop policy if exists department_super_delete_guard on public.department;
+create policy department_super_delete_guard on public.department
   as restrictive for delete to authenticated
   using ((select public.current_admin_is_super()));
 

@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
-import { fetchPendingApprovalCount } from '../lib/data';
+import { fetchClubs, fetchDepartments, fetchPendingApprovalCount, fetchSkillFaculties } from '../lib/data';
 
 const links = [
   { to: '/', label: 'My posts', icon: LayoutDashboard, end: true },
@@ -49,11 +49,50 @@ export default function Sidebar() {
   const { admin, isSuper, signOut } = useAdmin();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [scopeAssignment, setScopeAssignment] = useState({ key: '', name: '' });
   const scopeLabel = isSuper
     ? 'Super admin'
+    : admin?.scope_type === 'skill_faculty'
+      ? 'Skill Faculty admin'
     : admin?.scope_type === 'department'
       ? 'Department admin'
       : 'Club admin';
+
+  useEffect(() => {
+    if (!admin?.id || isSuper) return undefined;
+
+    let active = true;
+    Promise.all([fetchDepartments(), fetchSkillFaculties(), fetchClubs()])
+      .then(([departments, skillFaculties, clubs]) => {
+        let name = '';
+        if (admin.scope_type === 'skill_faculty') {
+          name = skillFaculties.find(row => row.id === admin.skill_faculty_id)?.name || '';
+        } else if (admin.scope_type === 'department') {
+          name = departments.find(row => row.id === admin.department_id)?.name || '';
+        } else if (admin.scope_type === 'club') {
+          name = clubs.find(row => row.id === admin.club_id)?.name || '';
+        }
+        if (active) {
+          setScopeAssignment({
+            key: [admin.id, admin.scope_type, admin.skill_faculty_id, admin.department_id, admin.club_id].join(':'),
+            name,
+          });
+        }
+      })
+      .catch(() => { if (active) setScopeAssignment({ key: '', name: '' }); });
+
+    return () => { active = false; };
+  }, [admin?.id, admin?.scope_type, admin?.skill_faculty_id, admin?.department_id, admin?.club_id, isSuper]);
+
+  const scopeAssignmentKey = [admin?.id, admin?.scope_type, admin?.skill_faculty_id, admin?.department_id, admin?.club_id].join(':');
+  const assignedScopeName = scopeAssignment.key === scopeAssignmentKey ? scopeAssignment.name : '';
+  const accountScope = isSuper ? 'All University data' : assignedScopeName;
+  const assignedScopePanel = accountScope && (
+    <div className="mb-4 rounded-xl border border-primary/15 bg-white px-3 py-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-mute">{scopeLabel}</p>
+      <p className="mt-0.5 truncate text-sm font-bold text-ink" title={accountScope}>{accountScope}</p>
+    </div>
+  );
 
   useEffect(() => {
     if (!admin?.id) return undefined;
@@ -117,6 +156,7 @@ export default function Sidebar() {
         </button>
         {mobileOpen && (
           <div className="absolute inset-x-0 top-full border-b border-line bg-white/98 p-4 shadow-xl backdrop-blur-xl">
+            {assignedScopePanel}
             <p className="mb-3 px-2 text-[10px] font-extrabold uppercase tracking-[0.16em] text-mute">Workspace</p>
             {navigation}
             <div className="mt-4 flex items-center gap-3 rounded-2xl border border-line bg-bg/80 p-3">
@@ -136,6 +176,7 @@ export default function Sidebar() {
       <aside className="sticky top-0 hidden h-screen w-[276px] flex-none flex-col justify-between border-r border-white/80 bg-white/90 px-4 py-5 shadow-[8px_0_28px_rgba(43,38,100,0.035)] backdrop-blur-xl md:flex">
         <div>
           <div className="mb-9 rounded-2xl border border-line/80 bg-white/75 p-3"><Brand /></div>
+          {assignedScopePanel}
           <div className="mb-3 flex items-center justify-between px-3">
             <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-mute/80">Workspace</p>
             <span className="rounded-full bg-soft px-2 py-0.5 text-[10px] font-bold capitalize text-primary">{admin?.scope_type || 'admin'}</span>
