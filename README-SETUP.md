@@ -46,6 +46,23 @@
 The admin page can promote an existing Auth user by UUID; it does not create
 Auth users or store passwords.
 
+## Event push delivery
+- The admin web app invokes `send-push` directly with the approved event ID
+  and the signed-in admin session. The function also accepts the database
+  webhook payload if that integration is configured.
+- Set the Firebase service-account JSON as the `FIREBASE_SERVICE_ACCOUNT`
+  Edge Function secret. Do not put that JSON in either app repository.
+- Deploy `supabase/functions/send-push` with JWT verification disabled; the
+  function validates admin sessions and webhook service keys itself. Run
+  `supabase/event_notification_push_delivery.sql` first to add the one-time
+  push claim column.
+- From the linked UniVents mobile project, deploy the compatible function with
+  `supabase functions deploy send-push --no-verify-jwt`.
+- After adding Firebase Messaging or changing Android notification code,
+  rebuild and reinstall the React Native app. Users must allow notifications;
+  the app subscribes signed-in students and faculty to `all` and their role
+  topic.
+
 ## Admin scope access
 - All registered admins can view posts across all scopes. Only the post creator
   and Super admins can edit or delete them.

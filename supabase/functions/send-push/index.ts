@@ -120,62 +120,92 @@ function adminCanReviewEvent(admin: AdminRow, event: EventRow) {
       && event.club_id === admin.club_id);
 }
 
+function constantTimeEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let result = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    result |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return result === 0;
+}
+
 Deno.serve(async request => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
 
   const authorization = request.headers.get('authorization') ?? '';
-  const accessToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-  if (!accessToken) return json({ error: 'Sign in to an admin account first.' }, 401);
-  if (!supabaseUrl || !anonKey || !serviceKey) {
+  const bearerToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const isDatabaseWebhook = !!serviceKey && constantTimeEqual(bearerToken, serviceKey);
+  if (!supabaseUrl || !serviceKey || (!isDatabaseWebhook && !anonKey)) {
     console.error('Missing Supabase runtime configuration for send-push.');
     return json({ error: 'Push service is not configured.' }, 500);
   }
 
-  const authClient = createClient(supabaseUrl, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: authData, error: authError } = await authClient.auth.getUser(accessToken);
-  if (authError || !authData.user) return json({ error: 'Your admin session is invalid or expired.' }, 401);
-
-  let eventId: string;
+  let body: Record<string, unknown>;
   try {
-    const body = await request.json();
-    eventId = typeof body?.event_id === 'string' ? body.event_id : '';
+    body = await request.json();
   } catch {
-    return json({ error: 'Request body must be JSON with an event_id.' }, 400);
+    return json({ error: 'Request body must be valid JSON.' }, 400);
   }
-  if (!eventId) return json({ error: 'event_id is required.' }, 400);
+
+  let adminUserId = '';
+  if (!isDatabaseWebhook) {
+    if (!bearerToken) return json({ error: 'Sign in to an admin account first.' }, 401);
+    const authClient = createClient(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: authData, error: authError } = await authClient.auth.getUser(bearerToken);
+    if (authError || !authData.user) {
+      return json({ error: 'Your admin session is invalid or expired.' }, 401);
+    }
+    adminUserId = authData.user.id;
+  }
 
   const adminClient = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   try {
-    const [{ data: admin, error: adminError }, { data: event, error: eventError }] = await Promise.all([
-      adminClient.from('admins')
-        .select('id, scope_type, skill_faculty_id, department_id, club_id')
-        .eq('id', authData.user.id)
-        .maybeSingle(),
-      adminClient.from('events')
-        .select('id, content_type, approval, organizer_scope, skill_faculty_id, department_id, club_id')
-        .eq('id', eventId)
-        .maybeSingle(),
-    ]);
-    if (adminError || eventError) throw adminError ?? eventError;
-    if (!admin || !event || !adminCanReviewEvent(admin as AdminRow, event as EventRow)) {
-      return json({ error: 'This event is outside your admin scope.' }, 403);
-    }
-    if (event.content_type !== 'event' || event.approval !== 'approved') {
-      return json({ error: 'Only approved events can send a push notification.' }, 409);
+    let notification: NotificationRow;
+    if (isDatabaseWebhook) {
+      if (body.type !== 'INSERT' || body.table !== 'event_notifications' || !body.record) {
+        return json({ ignored: true, reason: 'Not an event notification insert.' });
+      }
+      notification = body.record as NotificationRow;
+    } else {
+      const eventId = typeof body.event_id === 'string' ? body.event_id : '';
+      if (!eventId) return json({ error: 'event_id is required.' }, 400);
+
+      const [{ data: admin, error: adminError }, { data: event, error: eventError }] = await Promise.all([
+        adminClient.from('admins')
+          .select('id, scope_type, skill_faculty_id, department_id, club_id')
+          .eq('id', adminUserId)
+          .maybeSingle(),
+        adminClient.from('events')
+          .select('id, content_type, approval, organizer_scope, skill_faculty_id, department_id, club_id')
+          .eq('id', eventId)
+          .maybeSingle(),
+      ]);
+      if (adminError || eventError) throw adminError ?? eventError;
+      if (!admin || !event || !adminCanReviewEvent(admin as AdminRow, event as EventRow)) {
+        return json({ error: 'This event is outside your admin scope.' }, 403);
+      }
+      if (event.content_type !== 'event' || event.approval !== 'approved') {
+        return json({ error: 'Only approved events can send a push notification.' }, 409);
+      }
+
+      const { data, error: notificationError } = await adminClient
+        .from('event_notifications')
+        .select('id, event_id, title, message, visibility, image_url')
+        .eq('event_id', eventId)
+        .maybeSingle();
+      if (notificationError) throw notificationError;
+      if (!data) return json({ error: 'The approved event notification row was not created.' }, 409);
+      notification = data as NotificationRow;
     }
 
-    const { data: notification, error: notificationError } = await adminClient
-      .from('event_notifications')
-      .select('id, event_id, title, message, visibility, image_url')
-      .eq('event_id', eventId)
-      .maybeSingle();
-    if (notificationError) throw notificationError;
-    if (!notification) return json({ error: 'The approved event notification row was not created.' }, 409);
+    if (!notification.id || !notification.event_id || !notification.title || !notification.message) {
+      return json({ error: 'The event notification row is missing required fields.' }, 400);
+    }
 
     const topic = notification.visibility === 'all'
       ? 'all'
@@ -213,7 +243,7 @@ Deno.serve(async request => {
               android: {
                 priority: 'high',
                 notification: {
-                  channel_id: 'univents_event_updates',
+                  channel_id: 'univents_event_updates_v2',
                   icon: 'ic_stat_univents',
                   color: '#5B4BFF',
                   sound: 'default',
