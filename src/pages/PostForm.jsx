@@ -9,6 +9,7 @@ import {
   fetchDepartments,
   fetchSkillFaculties,
   fetchPostsInScope,
+  sendApprovedEventPush,
   updatePost,
 } from '../lib/data';
 
@@ -204,6 +205,19 @@ export default function PostForm() {
       const savedPost = id
         ? await updatePost(id, payload)
         : await createPost({ ...payload, created_by: admin.id });
+      let pushNotice = '';
+      if (savedPost.content_type === 'event' && savedPost.approval === 'approved') {
+        try {
+          const pushResult = await sendApprovedEventPush(savedPost.id);
+          pushNotice = pushResult?.sent
+            ? ' A phone push notification was sent.'
+            : pushResult?.reason === 'already_sent'
+              ? ' Its phone push notification was already sent.'
+              : ' No phone push notification was sent.';
+        } catch (pushError) {
+          pushNotice = ` The event was saved, but its phone push failed: ${pushError.message || 'Check the send-push Edge Function logs.'}`;
+        }
+      }
       const approvalDestination = organizerScope === 'skill_faculty'
         ? selectedFaculty?.name || 'the selected Skill Faculty'
         : organizerScope === 'department'
@@ -217,7 +231,7 @@ export default function PostForm() {
           : `Post saved. It is now in the ${approvalDestination} admin Pending approvals inbox.`
         : savedPost.approval === 'rejected'
           ? 'Post was saved with rejected approval status.'
-          : 'Post saved and approved.';
+          : `Post saved and approved.${pushNotice}`;
       navigate('/', { state: { postNotice } });
     } catch (e) {
       setError(e.message);
