@@ -3,7 +3,12 @@ import { Link, useLocation } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, CalendarDays, FileText, Sparkles, Trash2, X } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import PostCard from '../components/PostCard';
-import { deletePost, fetchApprovedPosts, fetchPostsCreatedBy } from '../lib/data';
+import {
+  deletePost,
+  fetchApprovedPosts,
+  fetchPostsInScope,
+  isRejectedPostEditableByAdmin,
+} from '../lib/data';
 import { useAdmin } from '../context/AdminContext';
 
 export default function Dashboard({ mineOnly = true }) {
@@ -32,7 +37,10 @@ export default function Dashboard({ mineOnly = true }) {
     }
 
     const query = mineOnly
-      ? fetchPostsCreatedBy(adminId)
+      ? fetchPostsInScope(adminId, adminScope, skillFacultyId, departmentId, clubId)
+        .then(rows => rows.filter(post =>
+          post.created_by === adminId || isRejectedPostEditableByAdmin(admin, post),
+        ))
       : fetchApprovedPosts();
     query
       .then(rows => {
@@ -50,7 +58,7 @@ export default function Dashboard({ mineOnly = true }) {
       });
 
     return () => { active = false; };
-  }, [mineOnly, adminId, adminScope, skillFacultyId, departmentId, clubId, adminScopeKey]);
+  }, [mineOnly, admin, adminId, adminScope, skillFacultyId, departmentId, clubId, adminScopeKey]);
 
   useEffect(() => {
     if (!deleteTarget) return undefined;
@@ -120,7 +128,7 @@ export default function Dashboard({ mineOnly = true }) {
           <div>
             <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary">Content workspace</p>
             <h1 className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">{mineOnly ? 'My posts' : 'All Posts'}</h1>
-            <p className="mt-1 text-sm text-mute">{mineOnly ? 'Manage events and notices created by your admin account.' : 'View approved events and notices from every department, Skill Faculty, club, and University.'}</p>
+            <p className="mt-1 text-sm text-mute">{mineOnly ? 'Manage your posts and resubmit rejected posts assigned to your scope.' : 'View approved events and notices from every department, Skill Faculty, club, and University.'}</p>
           </div>
           <Link
             to="/new"
@@ -201,11 +209,14 @@ export default function Dashboard({ mineOnly = true }) {
         ) : (
           <div className="flex flex-col gap-3">
             {shown.map((post, index) => {
-              const canManage = isSuper || post.created_by === admin?.id;
-              // Registration details and post mutations belong to the creator;
-              // Super admins can manage any post.
+              const canManage = isSuper
+                || post.created_by === admin?.id
+                || isRejectedPostEditableByAdmin(admin, post);
+              const canDelete = isSuper || post.created_by === admin?.id;
+              // Registration details and deletion remain limited to the creator
+              // and Super admins; target admins can edit rejected posts only.
               const canViewRegistrations = post.created_by === admin?.id;
-              return <div key={post.id} className="feed-card-enter" style={{ animationDelay: `${Math.min(index * 55, 330)}ms` }}><PostCard post={post} onDelete={handleDelete} canManage={canManage} canViewRegistrations={canViewRegistrations} /></div>;
+              return <div key={post.id} className="feed-card-enter" style={{ animationDelay: `${Math.min(index * 55, 330)}ms` }}><PostCard post={post} onDelete={handleDelete} canManage={canManage} canDelete={canDelete} canViewRegistrations={canViewRegistrations} /></div>;
             })}
           </div>
         )}

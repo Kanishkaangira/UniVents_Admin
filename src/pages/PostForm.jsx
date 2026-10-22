@@ -9,6 +9,7 @@ import {
   fetchDepartments,
   fetchSkillFaculties,
   fetchPostsInScope,
+  isRejectedPostEditableByAdmin,
   sendApprovedEventPush,
   updatePost,
 } from '../lib/data';
@@ -37,8 +38,10 @@ export default function PostForm() {
   const [departments, setDepartments] = useState([]);
   const [skillFaculties, setSkillFaculties] = useState([]);
   const [clubs, setClubs] = useState([]);
+  const [lookupsLoaded, setLookupsLoaded] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [existingApproval, setExistingApproval] = useState('');
+  const [editingRejectedTargetPost, setEditingRejectedTargetPost] = useState(false);
   const [organizerScope, setOrganizerScope] = useState(
     admin?.scope_type === 'super'
       ? 'university'
@@ -63,6 +66,7 @@ export default function PostForm() {
         setDepartments(departmentRows || []);
         setSkillFaculties(facultyRows || []);
         setClubs(clubRows || []);
+        setLookupsLoaded(true);
         if (!id && admin?.scope_type === 'skill_faculty') {
           const hasDepartments = departmentRows.some(
             department => department.skill_faculty_id === admin.skill_faculty_id,
@@ -89,9 +93,15 @@ export default function PostForm() {
       .then(posts => {
         const post = posts.find(p => p.id === id);
         if (!post) throw new Error('Post not found, or you do not have access to it.');
-        if (admin?.scope_type !== 'super' && post.created_by !== admin?.id) {
-          throw new Error('Only the post creator or a Super admin can edit this post.');
+        const canResubmitRejectedPost = isRejectedPostEditableByAdmin(admin, post);
+        if (post.created_by !== admin?.id && !canResubmitRejectedPost) {
+          throw new Error('Only the post creator, its target-scope admin, or a Super admin can edit this post.');
         }
+        setEditingRejectedTargetPost(
+          post.created_by !== admin?.id
+          && admin?.scope_type !== 'super'
+          && canResubmitRejectedPost,
+        );
         setForm({
           content_type: post.content_type,
           visibility: post.visibility || 'all',
@@ -119,10 +129,24 @@ export default function PostForm() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [id, admin?.id, admin?.scope_type, admin?.skill_faculty_id, admin?.department_id, admin?.club_id]);
+  }, [id, admin, admin?.id, admin?.scope_type, admin?.skill_faculty_id, admin?.department_id, admin?.club_id]);
 
   const isEvent = form.content_type === 'event';
-  const statusPreview = getEventStatusPreview(form.event_date);
+  const todayDate = getTodayDate();
+  const allowedDepartments = departments.filter(department =>
+    department.skill_faculty_id === skillFacultyId,
+  );
+  const facultyHasNoDepartments = lookupsLoaded
+    && organizerScope === 'department'
+    && !!skillFacultyId
+    && allowedDepartments.length === 0;
+  const effectiveOrganizerScope = facultyHasNoDepartments ? 'skill_faculty' : organizerScope;
+  const departmentSelection = facultyHasNoDepartments
+    ? '__skill_faculty__'
+    : departmentId;
+  const selectedFacultyName = skillFaculties.find(
+    faculty => faculty.id === skillFacultyId,
+  )?.name || 'the selected Skill Faculty';
 
   const update = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -138,6 +162,10 @@ export default function PostForm() {
       setError('Date, start time, and venue are required for an event. End time is optional.');
       return;
     }
+    if (isEvent && !id && form.event_date < todayDate) {
+      setError('Choose today or a future date for a new event.');
+      return;
+    }
 
     const selectedDepartment = departments.find(item => item.id === departmentId);
     const selectedFaculty = skillFaculties.find(item => item.id === skillFacultyId);
@@ -146,7 +174,7 @@ export default function PostForm() {
       setError('Choose a valid publish level.');
       return;
     }
-    if (organizerScope === 'department' && !departmentId) {
+    if (organizerScope === 'department' && !departmentId && !facultyHasNoDepartments) {
       setError('Choose the department this post is for.');
       return;
     }
@@ -163,11 +191,11 @@ export default function PostForm() {
       return;
     }
 
-    const defaultOrganizer = organizerScope === 'skill_faculty'
+    const defaultOrganizer = effectiveOrganizerScope === 'skill_faculty'
       ? selectedFaculty?.name || 'Skill Faculty'
-      : organizerScope === 'department'
+      : effectiveOrganizerScope === 'department'
       ? selectedDepartment?.name || 'Department'
-      : organizerScope === 'club'
+      : effectiveOrganizerScope === 'club'
         ? selectedClub?.name || 'Club'
         : 'University Administration';
 
@@ -177,10 +205,10 @@ export default function PostForm() {
       description: form.description.trim(),
       category: form.category.trim() || (isEvent ? 'General' : 'Update'),
       organizer_name: form.organizer_name.trim() || defaultOrganizer,
-      organizer_scope: organizerScope,
-      skill_faculty_id: ['skill_faculty', 'department'].includes(organizerScope) ? skillFacultyId || null : null,
-      department_id: organizerScope === 'department' ? departmentId || null : null,
-      club_id: organizerScope === 'club' ? clubId || null : null,
+      organizer_scope: effectiveOrganizerScope,
+      skill_faculty_id: ['skill_faculty', 'department'].includes(effectiveOrganizerScope) ? skillFacultyId || null : null,
+      department_id: effectiveOrganizerScope === 'department' ? departmentId || null : null,
+      club_id: effectiveOrganizerScope === 'club' ? clubId || null : null,
       visibility: form.visibility,
       ...(isEvent
         ? {
@@ -206,7 +234,11 @@ export default function PostForm() {
         ? await updatePost(id, payload)
         : await createPost({ ...payload, created_by: admin.id });
       let pushNotice = '';
-      if (savedPost.content_type === 'event' && savedPost.approval === 'approved') {
+      if (
+        savedPost.content_type === 'event'
+        && savedPost.approval === 'approved'
+        && !(id && existingApproval === 'rejected')
+      ) {
         try {
           const pushResult = await sendApprovedEventPush(savedPost.id);
           pushNotice = pushResult?.sent
@@ -218,15 +250,15 @@ export default function PostForm() {
           pushNotice = ` The event was saved, but its phone push failed: ${pushError.message || 'Check the send-push Edge Function logs.'}`;
         }
       }
-      const approvalDestination = organizerScope === 'skill_faculty'
+      const approvalDestination = savedPost.organizer_scope === 'skill_faculty'
         ? selectedFaculty?.name || 'the selected Skill Faculty'
-        : organizerScope === 'department'
+        : savedPost.organizer_scope === 'department'
         ? selectedDepartment?.name || 'the selected department'
-        : organizerScope === 'club'
+        : savedPost.organizer_scope === 'club'
           ? selectedClub?.name || 'the selected club'
           : 'super admins';
       const postNotice = savedPost.approval === 'pending'
-        ? organizerScope === 'university'
+        ? savedPost.organizer_scope === 'university'
           ? 'Post saved. It is now in the super admin Pending approvals inbox.'
           : `Post saved. It is now in the ${approvalDestination} admin Pending approvals inbox.`
         : savedPost.approval === 'rejected'
@@ -244,16 +276,13 @@ export default function PostForm() {
     department => department.skill_faculty_id === admin?.skill_faculty_id,
   );
   const hasFixedFacultyLevel = admin?.scope_type === 'skill_faculty' && !hasAssignedDepartments;
-  const scopeOptions = hasFixedFacultyLevel
+  const scopeOptions = admin?.scope_type === 'skill_faculty'
     ? ['skill_faculty', 'university', 'department', 'club']
     : ['university', 'department', 'club'];
   const preservingExistingFacultyPost = !!id
     && organizerScope === 'skill_faculty'
     && (admin?.scope_type === 'super'
       || (admin?.scope_type === 'skill_faculty' && skillFacultyId === admin.skill_faculty_id));
-  const allowedDepartments = departments.filter(department =>
-    department.skill_faculty_id === skillFacultyId,
-  );
   const currentAdminOrganizer = admin?.scope_type === 'super'
     ? 'University'
     : admin?.scope_type === 'skill_faculty'
@@ -264,22 +293,22 @@ export default function PostForm() {
   const assignedFacultyName = skillFaculties.find(
     faculty => faculty.id === admin?.skill_faculty_id,
   )?.name || 'Your assigned Skill Faculty';
-  const targetDescription = organizerScope === 'department'
+  const targetDescription = effectiveOrganizerScope === 'department'
     ? selectedTargetDepartmentName(departments, departmentId)
-    : organizerScope === 'skill_faculty'
-      ? assignedFacultyName
-      : organizerScope === 'club'
+    : effectiveOrganizerScope === 'skill_faculty'
+      ? selectedFacultyName
+      : effectiveOrganizerScope === 'club'
         ? clubs.find(club => club.id === clubId)?.name || 'the selected club'
         : 'University';
   const isOwnPublishTarget = admin?.scope_type === 'super'
     || (admin?.scope_type === 'skill_faculty'
-      && ['skill_faculty', 'department'].includes(organizerScope)
+      && effectiveOrganizerScope === 'skill_faculty'
       && skillFacultyId === admin.skill_faculty_id)
     || (admin?.scope_type === 'department'
-      && organizerScope === 'department'
+      && effectiveOrganizerScope === 'department'
       && departmentId === admin.department_id)
     || (admin?.scope_type === 'club'
-      && organizerScope === 'club'
+      && effectiveOrganizerScope === 'club'
       && clubId === admin.club_id);
   const needsApproval = !!admin && !isOwnPublishTarget;
   if (loading) {
@@ -376,13 +405,16 @@ export default function PostForm() {
               <select
                 value={organizerScope}
                 onChange={e => setOrganizerScope(e.target.value)}
+                disabled={editingRejectedTargetPost}
                 className="w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink"
               >
                 {scopeOptions.map(scope => (
                   <option key={scope} value={scope}>
                     {scope === 'skill_faculty'
                       ? assignedFacultyName
-                      : {university: 'University', department: 'Department', club: 'Club'}[scope]}
+                      : scope === 'department' && facultyHasNoDepartments
+                        ? 'Skill Faculty'
+                        : {university: 'University', department: 'Department', club: 'Club'}[scope]}
                   </option>
                 ))}
               </select>
@@ -403,20 +435,24 @@ export default function PostForm() {
                       setOrganizerScope('skill_faculty');
                     }
                   }}
-                  className="w-full min-w-0 rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink"
+                  disabled={editingRejectedTargetPost}
+                  className="w-full min-w-0 rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="" disabled>Select target Skill Faculty</option>
                   {skillFaculties.map(faculty => <option key={faculty.id} value={faculty.id}>{faculty.code ? `${faculty.code} · ` : ''}{faculty.name}</option>)}
                 </select>
                 <select
-                  aria-label="Target department under the selected Skill Faculty"
+                  aria-label="Target department or Skill Faculty under the selected Skill Faculty"
                   required
-                  value={departmentId}
-                  onChange={e => setDepartmentId(e.target.value)}
-                  disabled={!skillFacultyId}
+                  value={departmentSelection}
+                  onChange={e => setDepartmentId(e.target.value === '__skill_faculty__' ? '' : e.target.value)}
+                  disabled={!skillFacultyId || editingRejectedTargetPost}
                   className="w-full min-w-0 rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="" disabled>{skillFacultyId ? 'Select target department' : 'Choose a Skill Faculty first'}</option>
+                  {facultyHasNoDepartments && (
+                    <option value="__skill_faculty__">{selectedFacultyName}</option>
+                  )}
                   {allowedDepartments.map(department => (
                     <option key={department.id} value={department.id}>
                       {department.code ? `${department.code} · ` : ''}{department.name}
@@ -425,12 +461,18 @@ export default function PostForm() {
                 </select>
               </div>
             )}
+            {facultyHasNoDepartments && organizerScope === 'department' && (
+              <p className="mt-2 text-xs leading-5 text-mute">
+                No departments are set up under this Skill Faculty. This post will target {selectedFacultyName} directly.
+              </p>
+            )}
             {organizerScope === 'club' && (
               <select
                 aria-label="Target club for this post"
                 required
                 value={clubId}
                 onChange={e => setClubId(e.target.value)}
+                disabled={editingRejectedTargetPost}
                 className="mt-2 w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-sm font-medium text-ink"
               >
                 <option value="" disabled>Select target club</option>
@@ -438,8 +480,8 @@ export default function PostForm() {
               </select>
             )}
             <p className="mt-1 text-xs leading-5 text-mute">
-              {hasFixedFacultyLevel && organizerScope === 'skill_faculty'
-                ? `This post will be published under ${assignedFacultyName}.`
+              {effectiveOrganizerScope === 'skill_faculty'
+                ? `This post will be published under ${selectedFacultyName}.`
                 : organizerScope === 'university'
                   ? 'University posts are sent to the super admin for approval.'
                   : 'Posts outside your scope need approval from the target admin.'}
@@ -459,7 +501,14 @@ export default function PostForm() {
                   <span className="text-xs text-mute">Date and start time required</span>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <Field className="mb-0" type="date" label="Date *" value={form.event_date} onChange={v => update('event_date', v)} />
+                  <Field
+                    className="mb-0"
+                    type="date"
+                    label="Date *"
+                    value={form.event_date}
+                    onChange={v => update('event_date', v)}
+                    min={!id ? todayDate : undefined}
+                  />
                   <Field className="mb-0" type="time" label="Start time *" value={form.start_time} onChange={v => update('start_time', v)} />
                   <Field className="mb-0" type="time" label="End time (optional)" value={form.end_time} onChange={v => update('end_time', v)} />
                 </div>
@@ -467,11 +516,11 @@ export default function PostForm() {
               <Field label="Venue *" value={form.venue} onChange={v => update('venue', v)} />
 
               <div className="mb-4">
-                <label className="mb-1.5 block text-sm font-semibold text-mute">Event status · automatic</label>
+                <label className="mb-1.5 block text-sm font-semibold text-mute">Event status</label>
                 <div className="inline-flex min-w-32 items-center rounded-xl border border-primary/15 bg-soft px-4 py-2.5 text-sm font-bold text-primary" aria-readonly="true">
-                  {statusPreview}
+                  Upcoming
                 </div>
-                <p className="mt-1 text-xs text-mute">Based on the event date; this status cannot be changed manually.</p>
+                <p className="mt-1 text-xs text-mute">Events are shown as Upcoming in the admin panel.</p>
               </div>
 
               <label className="mb-4 flex items-center gap-2 text-sm font-semibold text-ink">
@@ -541,7 +590,18 @@ function selectedTargetDepartmentName(departments, departmentId) {
     || 'the selected department';
 }
 
-function Field({ label, value, onChange, type = 'text', placeholder, className = 'mb-4' }) {
+function getTodayDate() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const part = type => parts.find(item => item.type === type)?.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function Field({ label, value, onChange, type = 'text', placeholder, min, className = 'mb-4' }) {
   return (
     <div className={className}>
       <label className="mb-1.5 block text-sm font-semibold text-mute">{label}</label>
@@ -550,6 +610,7 @@ function Field({ label, value, onChange, type = 'text', placeholder, className =
           type={type}
           value={value}
           placeholder={placeholder}
+          min={min}
           onChange={e => onChange(e.target.value)}
           onClick={e => {
             if (type === 'time' && typeof e.currentTarget.showPicker === 'function') {
@@ -572,22 +633,6 @@ function Field({ label, value, onChange, type = 'text', placeholder, className =
       </div>
     </div>
   );
-}
-
-function getEventStatusPreview(eventDate) {
-  if (!eventDate) return 'Upcoming';
-
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).formatToParts(new Date());
-  const today = `${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}-${parts.find(part => part.type === 'day').value}`;
-
-  if (eventDate < today) return 'Completed';
-  if (eventDate === today) return 'Live';
-  return 'Upcoming';
 }
 
 function TextArea({ label, value, onChange }) {
