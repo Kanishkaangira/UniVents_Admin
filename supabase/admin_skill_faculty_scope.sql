@@ -325,7 +325,7 @@ begin
     is_own_scope :=
       (creator_admin.scope_type::text = 'skill_faculty'
         and new.skill_faculty_id = creator_admin.skill_faculty_id
-        and new.organizer_scope::text in ('skill_faculty', 'department'))
+        and new.organizer_scope::text = 'skill_faculty')
       or (creator_admin.scope_type::text = 'department'
         and new.organizer_scope::text = 'department'
         and new.department_id = creator_admin.department_id)
@@ -455,9 +455,7 @@ set search_path = ''
 as $$
 begin
   if old.approval::text = 'rejected'
-    and new.approval::text = 'rejected'
-    and (pg_catalog.to_jsonb(new) - 'approval' - 'updated_at')
-      is distinct from (pg_catalog.to_jsonb(old) - 'approval' - 'updated_at') then
+    and new.approval::text = 'rejected' then
     new.approval := 'pending'::public.approval_status_enum;
   end if;
   return new;

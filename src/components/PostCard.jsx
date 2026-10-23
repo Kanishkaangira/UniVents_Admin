@@ -14,7 +14,7 @@ const scopeText = post => {
   return post.organizer_scope;
 };
 
-export default function PostCard({ post, onDelete, actions, canManage = true, canViewRegistrations = canManage }) {
+export default function PostCard({ post, onDelete, actions, canManage = true, canDelete = canManage, canViewRegistrations = canManage }) {
   const [registrationsOpen, setRegistrationsOpen] = useState(false);
   const [registrations, setRegistrations] = useState(null);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
@@ -84,7 +84,7 @@ export default function PostCard({ post, onDelete, actions, canManage = true, ca
           <div className="flex flex-wrap items-center gap-2">
             <ApprovalBadge approval={post.approval} />
             {!canManage && <span className="rounded-full bg-bg px-2.5 py-1 text-xs font-bold text-mute">Read only</span>}
-            {isEvent && post.status && <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-bold capitalize text-success">{post.status}</span>}
+            {isEvent && <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-bold capitalize text-success">Upcoming</span>}
             {post.category && <span className="rounded-full border border-line px-2.5 py-1 text-xs font-semibold text-mute">{post.category}</span>}
           </div>
 
@@ -113,7 +113,7 @@ export default function PostCard({ post, onDelete, actions, canManage = true, ca
                 <button type="button" onClick={openRegistrations} className="rounded-lg bg-primary/10 px-3 py-2 text-sm font-bold text-primary transition hover:bg-primary/15">View attendees</button>
               )}
               {canManage && <Link to={`/edit/${post.id}`} className="rounded-lg px-3 py-2 text-sm font-semibold text-primary transition hover:bg-soft">Edit</Link>}
-              {canManage && onDelete && <button onClick={() => onDelete(post.id)} className="rounded-lg px-3 py-2 text-sm font-semibold text-danger transition hover:bg-red-50">Delete</button>}
+              {canDelete && onDelete && <button onClick={() => onDelete(post.id)} className="rounded-lg px-3 py-2 text-sm font-semibold text-danger transition hover:bg-red-50">Delete</button>}
             </div>
           </div>
         </div>

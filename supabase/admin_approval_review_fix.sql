@@ -58,9 +58,7 @@ set search_path = ''
 as $$
 begin
   if old.approval::text = 'rejected'
-    and new.approval::text = 'rejected'
-    and (pg_catalog.to_jsonb(new) - 'approval' - 'updated_at')
-      is distinct from (pg_catalog.to_jsonb(old) - 'approval' - 'updated_at') then
+    and new.approval::text = 'rejected' then
     new.approval := 'pending'::public.approval_status_enum;
   end if;
   return new;
@@ -71,6 +69,37 @@ drop trigger if exists events_resubmit_rejected_on_edit on public.events;
 create trigger events_resubmit_rejected_on_edit
 before update on public.events
 for each row execute function public.resubmit_rejected_event_on_edit();
+
+-- Keep the target-scope review inbox available when this hotfix is applied
+-- without rerunning the full approval-routing migration.
+create or replace function public.get_pending_admin_posts()
+returns setof public.events
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select event_row.*
+  from public.events as event_row
+  join public.admins as admin_row on admin_row.id = (select auth.uid())
+  where event_row.approval::text = 'pending'
+    and (
+      admin_row.scope_type::text = 'super'
+      or (admin_row.scope_type::text = 'skill_faculty'
+        and event_row.organizer_scope::text in ('skill_faculty', 'department')
+        and event_row.skill_faculty_id = admin_row.skill_faculty_id)
+      or (admin_row.scope_type::text = 'department'
+        and event_row.organizer_scope::text = 'department'
+        and event_row.department_id = admin_row.department_id)
+      or (admin_row.scope_type::text = 'club'
+        and event_row.organizer_scope::text = 'club'
+        and event_row.club_id = admin_row.club_id)
+    )
+  order by event_row.created_at asc
+$$;
+
+revoke all on function public.get_pending_admin_posts() from public, anon;
+grant execute on function public.get_pending_admin_posts() to authenticated;
 
 -- Ensure resubmissions publish their UPDATE to the target admins immediately.
 do $$

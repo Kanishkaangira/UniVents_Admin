@@ -70,6 +70,12 @@ export const saveDepartment = fields =>
 export const deleteDepartment = id =>
   supabase.from('department').delete().eq('id', id).then(check);
 
+export const saveSkillFaculty = fields =>
+  supabase.from('skill_faculty').upsert(fields, { onConflict: 'id' }).select().single().then(check);
+
+export const deleteSkillFaculty = id =>
+  supabase.from('skill_faculty').delete().eq('id', id).then(check);
+
 export const saveClub = fields =>
   supabase.from('clubs').upsert(fields, { onConflict: 'id' }).select().single().then(check);
 
@@ -129,6 +135,24 @@ export const fetchPostsCreatedBy = userId => {
     .order('created_at', { ascending: false })
     .then(check)
     .then(addRegistrationCounts);
+};
+
+export const isRejectedPostEditableByAdmin = (admin, post) => {
+  if (!admin || post?.approval !== 'rejected') return false;
+  if (admin.scope_type === 'super') return true;
+  if (admin.scope_type === 'skill_faculty') {
+    return ['skill_faculty', 'department'].includes(post.organizer_scope)
+      && post.skill_faculty_id === admin.skill_faculty_id;
+  }
+  if (admin.scope_type === 'department') {
+    return post.organizer_scope === 'department'
+      && post.department_id === admin.department_id;
+  }
+  if (admin.scope_type === 'club') {
+    return post.organizer_scope === 'club'
+      && post.club_id === admin.club_id;
+  }
+  return false;
 };
 
 export const fetchPendingPosts = () =>

@@ -4,6 +4,7 @@ import Sidebar from '../components/Sidebar';
 import PostCard from '../components/PostCard';
 import { fetchPendingPosts, sendApprovedPostPush, setApproval } from '../lib/data';
 import { useAdmin } from '../context/AdminContext';
+import { supabase } from '../lib/supabase';
 
 export default function PendingApprovals() {
   const { admin } = useAdmin();
@@ -30,14 +31,25 @@ export default function PendingApprovals() {
     };
 
     load();
+    const channel = supabase
+      .channel(`pending-approval-inbox-${admin?.id || 'admin'}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'events',
+      }, payload => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') load();
+      })
+      .subscribe();
     const intervalId = window.setInterval(load, 20000);
     window.addEventListener('focus', load);
     return () => {
       active = false;
       window.clearInterval(intervalId);
       window.removeEventListener('focus', load);
+      supabase.removeChannel(channel);
     };
-  }, []);
+  }, [admin?.id]);
 
   useEffect(() => {
     if (!notice) return undefined;
