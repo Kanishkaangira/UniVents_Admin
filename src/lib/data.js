@@ -225,6 +225,9 @@ export const sendApprovedPostPush = async eventId => {
   return data;
 };
 
+// Compatibility name used by the management notification flow.
+export const sendApprovedEventPush = sendApprovedPostPush;
+
 // ---- attachments (poster image or notice PDF) ----
 // bucket: 'event-posters' | 'notice-attachments'
 export const uploadAttachment = async (bucket, file, folderOverride) => {

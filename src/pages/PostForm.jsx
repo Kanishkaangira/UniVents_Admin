@@ -9,12 +9,8 @@ import {
   fetchDepartments,
   fetchSkillFaculties,
   fetchPostsInScope,
-<<<<<<< HEAD
   sendApprovedPostPush,
-=======
   isRejectedPostEditableByAdmin,
-  sendApprovedEventPush,
->>>>>>> c2e2acfe9f16a164afb5b8c980bf5ad9fc5bdf1c
   updatePost,
 } from '../lib/data';
 
@@ -238,15 +234,11 @@ export default function PostForm() {
         ? await updatePost(id, payload)
         : await createPost({ ...payload, created_by: admin.id });
       let pushNotice = '';
-<<<<<<< HEAD
-      if (['event', 'notice'].includes(savedPost.content_type) && savedPost.approval === 'approved') {
-=======
       if (
-        savedPost.content_type === 'event'
+        ['event', 'notice'].includes(savedPost.content_type)
         && savedPost.approval === 'approved'
         && !(id && existingApproval === 'rejected')
       ) {
->>>>>>> c2e2acfe9f16a164afb5b8c980bf5ad9fc5bdf1c
         try {
           const pushResult = await sendApprovedPostPush(savedPost.id);
           pushNotice = pushResult?.sent
