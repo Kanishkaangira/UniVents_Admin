@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import PostCard from '../components/PostCard';
-import { fetchPendingPosts, sendApprovedEventPush, setApproval } from '../lib/data';
+import { fetchPendingPosts, sendApprovedPostPush, setApproval } from '../lib/data';
 import { useAdmin } from '../context/AdminContext';
 
 export default function PendingApprovals() {
@@ -63,12 +63,16 @@ export default function PendingApprovals() {
       const reviewedPost = await setApproval(post.id, decision);
       setPosts(prev => prev.filter(item => item.id !== post.id));
       setDecisionTarget(null);
-      if (decision === 'approved' && reviewedPost?.content_type === 'event') {
+      if (decision === 'approved' && ['event', 'notice'].includes(reviewedPost?.content_type)) {
         try {
-          const pushResult = await sendApprovedEventPush(reviewedPost.id);
+          const pushResult = await sendApprovedPostPush(reviewedPost.id);
           setNotice(pushResult?.sent
             ? `${post.title} was approved and a push notification was sent.`
-            : `${post.title} was approved. ${pushResult?.reason === 'already_sent' ? 'Its push notification was already sent.' : 'No push notification was sent.'}`);
+            : `${post.title} was approved. ${pushResult?.reason === 'already_sent'
+              ? 'Its push notification was already sent.'
+              : pushResult?.reason === 'no_registered_devices'
+                ? 'No registered app devices were found, so no push was sent.'
+                : 'No push notification was sent.'}`);
         } catch (pushError) {
           setNotice(`${post.title} was approved, but the push notification failed: ${pushError.message || 'Check the send-push Edge Function logs.'}`);
         }

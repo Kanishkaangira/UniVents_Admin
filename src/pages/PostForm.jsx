@@ -9,7 +9,7 @@ import {
   fetchDepartments,
   fetchSkillFaculties,
   fetchPostsInScope,
-  sendApprovedEventPush,
+  sendApprovedPostPush,
   updatePost,
 } from '../lib/data';
 
@@ -206,16 +206,18 @@ export default function PostForm() {
         ? await updatePost(id, payload)
         : await createPost({ ...payload, created_by: admin.id });
       let pushNotice = '';
-      if (savedPost.content_type === 'event' && savedPost.approval === 'approved') {
+      if (['event', 'notice'].includes(savedPost.content_type) && savedPost.approval === 'approved') {
         try {
-          const pushResult = await sendApprovedEventPush(savedPost.id);
+          const pushResult = await sendApprovedPostPush(savedPost.id);
           pushNotice = pushResult?.sent
             ? ' A phone push notification was sent.'
             : pushResult?.reason === 'already_sent'
               ? ' Its phone push notification was already sent.'
+              : pushResult?.reason === 'no_registered_devices'
+                ? ' No registered app devices were found, so no phone push was sent.'
               : ' No phone push notification was sent.';
         } catch (pushError) {
-          pushNotice = ` The event was saved, but its phone push failed: ${pushError.message || 'Check the send-push Edge Function logs.'}`;
+          pushNotice = ` The post was saved, but its phone push failed: ${pushError.message || 'Check the send-push Edge Function logs.'}`;
         }
       }
       const approvalDestination = organizerScope === 'skill_faculty'

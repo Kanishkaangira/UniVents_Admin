@@ -26,6 +26,7 @@ type EventRow = {
 type NotificationRow = {
   id: string;
   event_id: string;
+  content_type: string;
   title: string;
   message: string;
   visibility: string;
@@ -189,30 +190,44 @@ Deno.serve(async request => {
       if (!admin || !event || !adminCanReviewEvent(admin as AdminRow, event as EventRow)) {
         return json({ error: 'This event is outside your admin scope.' }, 403);
       }
-      if (event.content_type !== 'event' || event.approval !== 'approved') {
-        return json({ error: 'Only approved events can send a push notification.' }, 409);
+      if (!['event', 'notice'].includes(event.content_type) || event.approval !== 'approved') {
+        return json({ error: 'Only approved events and notices can send a push notification.' }, 409);
       }
 
       const { data, error: notificationError } = await adminClient
         .from('event_notifications')
-        .select('id, event_id, title, message, visibility, image_url')
+        .select('id, event_id, content_type, title, message, visibility, image_url')
         .eq('event_id', eventId)
         .maybeSingle();
       if (notificationError) throw notificationError;
-      if (!data) return json({ error: 'The approved event notification row was not created.' }, 409);
+      if (!data) return json({ error: 'The approved post notification row was not created.' }, 409);
       notification = data as NotificationRow;
     }
 
-    if (!notification.id || !notification.event_id || !notification.title || !notification.message) {
-      return json({ error: 'The event notification row is missing required fields.' }, 400);
+    if (!notification.id || !notification.event_id || !notification.title || !notification.message
+      || !['event', 'notice'].includes(notification.content_type)) {
+      return json({ error: 'The post notification row is missing required fields.' }, 400);
     }
 
-    const topic = notification.visibility === 'all'
-      ? 'all'
+    const recipientUserTypes = notification.visibility === 'all'
+      ? ['student', 'faculty']
       : ['student', 'faculty'].includes(notification.visibility)
-        ? notification.visibility
+        ? [notification.visibility]
         : null;
-    if (!topic) return json({ error: 'The event has an unsupported notification audience.' }, 400);
+    if (!recipientUserTypes) return json({ error: 'The post has an unsupported notification audience.' }, 400);
+
+    const tokens: { fcm_token: string }[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data: deviceTokens, error: tokenError } = await adminClient.rpc(
+        'get_event_push_device_tokens',
+        { p_user_types: recipientUserTypes, p_offset: offset, p_limit: 1000 },
+      );
+      if (tokenError) throw tokenError;
+      const page = deviceTokens ?? [];
+      tokens.push(...page);
+      if (page.length < 1000) break;
+    }
+    if (tokens.length === 0) return json({ sent: false, reason: 'no_registered_devices' });
 
     // Claim this event's one push atomically so retries or duplicate clicks do not spam users.
     const { data: claimed, error: claimError } = await adminClient
@@ -231,46 +246,77 @@ Deno.serve(async request => {
       const serviceAccount = JSON.parse(rawServiceAccount);
       if (!serviceAccount.project_id) throw new Error('Firebase service account has no project_id.');
       const firebaseToken = await getFirebaseAccessToken(serviceAccount);
-      const fcmResponse = await fetch(
-        `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(serviceAccount.project_id)}/messages:send`,
-        {
-          method: 'POST',
-          headers: { authorization: `Bearer ${firebaseToken}`, 'content-type': 'application/json' },
-          body: JSON.stringify({
-            message: {
-              topic,
-              notification: { title: notification.title, body: notification.message },
-              android: {
-                priority: 'high',
-                notification: {
-                  channel_id: 'univents_event_updates_v2',
-                  icon: 'ic_stat_univents',
-                  color: '#5B4BFF',
-                  sound: 'default',
-                  ...(notification.image_url ? { image: notification.image_url } : {}),
+      const sendToToken = async (device: { fcm_token: string }) => {
+        const fcmResponse = await fetch(
+          `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(serviceAccount.project_id)}/messages:send`,
+          {
+            method: 'POST',
+            headers: { authorization: `Bearer ${firebaseToken}`, 'content-type': 'application/json' },
+            body: JSON.stringify({
+              message: {
+                token: device.fcm_token,
+                notification: { title: notification.title, body: notification.message },
+                android: {
+                  priority: 'high',
+                  notification: {
+                    channel_id: 'univents_event_updates_v2',
+                    icon: 'ic_stat_univents',
+                    color: '#5B4BFF',
+                    sound: 'default',
+                    ...(notification.image_url ? { image: notification.image_url } : {}),
+                  },
+                },
+                data: {
+                  notification_id: notification.id,
+                  event_id: notification.event_id,
+                  type: `${notification.content_type}_published`,
                 },
               },
-              data: {
-                notification_id: notification.id,
-                event_id: notification.event_id,
-                type: 'event_published',
-              },
-            },
-          }),
-        },
-      );
-      if (!fcmResponse.ok) {
-        console.error('FCM send failed:', fcmResponse.status, await fcmResponse.text());
-        throw new Error('Firebase rejected the push. Check the send-push Edge Function logs.');
+            }),
+          },
+        );
+        if (fcmResponse.ok) return { sent: true, token: device.fcm_token };
+        return {
+          sent: false,
+          token: device.fcm_token,
+          status: fcmResponse.status,
+          details: await fcmResponse.text(),
+        };
+      };
+
+      const results: Awaited<ReturnType<typeof sendToToken>>[] = [];
+      for (let index = 0; index < tokens.length; index += 10) {
+        results.push(...await Promise.all(tokens.slice(index, index + 10).map(sendToToken)));
       }
+      const sentTokens = results.filter(result => result.sent);
+      const failedTokens = results.filter(result => !result.sent);
+      const invalidTokens = failedTokens.filter(result => {
+        try {
+          const error = JSON.parse(result.details);
+          return error.error?.details?.some((detail: { errorCode?: string }) =>
+            detail.errorCode === 'UNREGISTERED');
+        } catch {
+          return false;
+        }
+      });
+      if (invalidTokens.length) {
+        const { error: cleanupError } = await adminClient.from('device_tokens')
+          .delete().in('fcm_token', invalidTokens.map(result => result.token));
+        if (cleanupError) console.error('Could not remove invalid push device tokens:', cleanupError.message);
+      }
+      if (failedTokens.length) console.error(
+        `FCM rejected ${failedTokens.length} of ${results.length} post push deliveries.`,
+        failedTokens.map(result => ({ status: result.status, details: result.details })),
+      );
+      if (!sentTokens.length) throw new Error('Firebase rejected all push notification deliveries.');
+
+      return json({ sent: true, sent_count: sentTokens.length, failed_count: failedTokens.length });
     } catch (error) {
       const { error: releaseError } = await adminClient.from('event_notifications')
         .update({ push_sent_at: null }).eq('id', notification.id);
       if (releaseError) console.error('Could not release failed push claim:', releaseError.message);
       throw error;
     }
-
-    return json({ sent: true, topic });
   } catch (error) {
     console.error('send-push failed:', error instanceof Error ? error.message : 'Unknown error');
     return json({ error: error instanceof Error ? error.message : 'Push could not be sent.' }, 500);

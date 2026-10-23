@@ -181,7 +181,7 @@ export const setApproval = async (id, approval) => {
   return Array.isArray(data) ? data[0] : data;
 };
 
-export const sendApprovedEventPush = async eventId => {
+export const sendApprovedPostPush = async eventId => {
   const { data, error } = await supabase.functions.invoke('send-push', {
     body: { event_id: eventId },
   });

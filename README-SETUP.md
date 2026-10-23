@@ -46,22 +46,26 @@
 The admin page can promote an existing Auth user by UUID; it does not create
 Auth users or store passwords.
 
-## Event push delivery
+## Event and notice push delivery
 - The admin web app invokes `send-push` directly with the approved event ID
   and the signed-in admin session. The function also accepts the database
   webhook payload if that integration is configured.
 - Set the Firebase service-account JSON as the `FIREBASE_SERVICE_ACCOUNT`
   Edge Function secret. Do not put that JSON in either app repository.
-- Deploy `supabase/functions/send-push` with JWT verification disabled; the
-  function validates admin sessions and webhook service keys itself. Run
-  `supabase/event_notification_push_delivery.sql` first to add the one-time
-  push claim column.
-- From the linked UniVents mobile project, deploy the compatible function with
+- In the SQL Editor, run the mobile repository's
+  `supabase/event_notifications.sql` followed by
+  `supabase/push_notifications_setup.sql`. These create/update the approved
+  event-and-notice feed, one-time push claim, and registered device-token
+  lookup.
+- From the linked UniVents Supabase project, deploy the updated
+  `send-push` function with JWT verification disabled. Both repository copies
+  support admin requests and the database-webhook payload:
   `supabase functions deploy send-push --no-verify-jwt`.
 - After adding Firebase Messaging or changing Android notification code,
   rebuild and reinstall the React Native app. Users must allow notifications;
-  the app subscribes signed-in students and faculty to `all` and their role
-  topic.
+  the app registers devices for signed-in students and faculty. A post is
+  pushed only after it is approved and only to the selected visibility
+  audience; posts awaiting target-scope approval are not pushed.
 
 ## Admin scope access
 - All registered admins can view posts across all scopes. Only the post creator
